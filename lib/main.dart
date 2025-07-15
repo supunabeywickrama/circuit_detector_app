@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'pages/home_page.dart';
 import 'pages/settings_page.dart';
 import 'pages/history_page.dart';
-import 'services/theme_provider.dart';
 import 'package:provider/provider.dart';
 
 void main() {
