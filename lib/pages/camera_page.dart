@@ -14,9 +14,8 @@ class _CameraPageState extends State<CameraPage> {
   CameraController? _controller;
   bool _isCameraInitialized = false;
 
-  XFile? _firstImage;
-  XFile? _secondImage;
-  bool _isCapturingSecond = false;
+  final List<XFile> _capturedImages = [];
+  static const int maxImages = 5;
 
   @override
   void initState() {
@@ -40,12 +39,11 @@ class _CameraPageState extends State<CameraPage> {
 
     try {
       final image = await _controller!.takePicture();
+      setState(() => _capturedImages.add(image));
 
-      if (!_isCapturingSecond) {
-        setState(() => _firstImage = image);
-        _askForSecondAngle();
+      if (_capturedImages.length < maxImages) {
+        _askForAnotherAngle();
       } else {
-        setState(() => _secondImage = image);
         _navigateToResults();
       }
     } catch (e) {
@@ -53,12 +51,12 @@ class _CameraPageState extends State<CameraPage> {
     }
   }
 
-  void _askForSecondAngle() async {
-    bool takeSecond = await showDialog(
+  void _askForAnotherAngle() async {
+    bool takeAnother = await showDialog(
       context: context,
       builder: (_) => AlertDialog(
         title: const Text("Multi-angle Capture"),
-        content: const Text("Do you want to take another angle for better accuracy?"),
+        content: Text("Do you want to take another angle? (${_capturedImages.length}/$maxImages taken)"),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text("No")),
           ElevatedButton(onPressed: () => Navigator.pop(context, true), child: const Text("Yes")),
@@ -66,36 +64,24 @@ class _CameraPageState extends State<CameraPage> {
       ),
     );
 
-    if (takeSecond) {
-      setState(() {
-        _isCapturingSecond = true;
-        _secondImage = null;
-      });
-    } else {
+    if (!takeAnother) {
       _navigateToResults();
     }
   }
 
   void _navigateToResults() {
-    if (_firstImage != null) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => ResultsPage(
-            firstImagePath: _firstImage!.path,
-            secondImagePath: _secondImage?.path,
-          ),
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ResultsPage(
+          imagePaths: _capturedImages.map((img) => img.path).toList(),
         ),
-      );
-    }
+      ),
+    );
   }
 
   void _resetCapture() {
-    setState(() {
-      _firstImage = null;
-      _secondImage = null;
-      _isCapturingSecond = false;
-    });
+    setState(() => _capturedImages.clear());
   }
 
   @override
@@ -106,7 +92,7 @@ class _CameraPageState extends State<CameraPage> {
 
   @override
   Widget build(BuildContext context) {
-    XFile? previewImage = _secondImage ?? _firstImage;
+    XFile? previewImage = _capturedImages.isNotEmpty ? _capturedImages.last : null;
 
     return Scaffold(
       extendBodyBehindAppBar: true,
@@ -172,14 +158,10 @@ class _CameraPageState extends State<CameraPage> {
                           onPressed: _resetCapture,
                         ),
                         _buildRoundedButton(
-                          label: previewImage == null
-                              ? "Capture"
-                              : (_isCapturingSecond ? "Capture 2nd" : "Process"),
+                          label: _capturedImages.length < maxImages ? "Capture" : "Process",
                           color1: Colors.teal,
                           color2: Colors.cyan,
-                          icon: previewImage == null
-                              ? Icons.camera_alt
-                              : (_isCapturingSecond ? Icons.camera_alt_outlined : Icons.check),
+                          icon: _capturedImages.length < maxImages ? Icons.camera_alt : Icons.check,
                           onPressed: _captureImage,
                         ),
                       ],
@@ -193,10 +175,10 @@ class _CameraPageState extends State<CameraPage> {
                         color: Colors.deepPurple.shade800.withOpacity(0.85),
                         borderRadius: BorderRadius.circular(15),
                       ),
-                      child: const Text(
-                        "⚡ Tip: Take multiple angles for better recognition accuracy.",
+                      child: Text(
+                        "⚡ Tip: Take up to $maxImages angles for better recognition accuracy.",
                         textAlign: TextAlign.center,
-                        style: TextStyle(color: Colors.white),
+                        style: const TextStyle(color: Colors.white),
                       ),
                     ),
                   ],

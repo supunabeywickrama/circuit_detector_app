@@ -3,13 +3,11 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 class ResultsPage extends StatelessWidget {
-  final String? firstImagePath;
-  final String? secondImagePath;
+  final List<String> imagePaths;
 
   const ResultsPage({
     Key? key,
-    this.firstImagePath,
-    this.secondImagePath,
+    required this.imagePaths,
   }) : super(key: key);
 
   @override
@@ -48,7 +46,9 @@ class ResultsPage extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 30),
-              if (firstImagePath != null || secondImagePath != null)
+
+              /// Show all captured images
+              if (imagePaths.isNotEmpty)
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -56,29 +56,17 @@ class ResultsPage extends StatelessWidget {
                         style: TextStyle(
                             fontSize: 18, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 10),
-                    if (firstImagePath != null)
+                    for (int i = 0; i < imagePaths.length; i++)
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text("• Angle 1:"),
+                          Text("• Angle ${i + 1}:"),
                           const SizedBox(height: 5),
                           Image.file(
-                            File(firstImagePath!),
+                            File(imagePaths[i]),
                             height: 200,
                           ),
                           const SizedBox(height: 20),
-                        ],
-                      ),
-                    if (secondImagePath != null)
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text("• Angle 2:"),
-                          const SizedBox(height: 5),
-                          Image.file(
-                            File(secondImagePath!),
-                            height: 200,
-                          ),
                         ],
                       ),
                   ],
