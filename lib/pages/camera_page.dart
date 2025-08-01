@@ -1,6 +1,9 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
+import 'package:image_cropper/image_cropper.dart';
+import 'package:path/path.dart' as path;
+import 'package:path_provider/path_provider.dart';
 import 'results_page.dart';
 
 class CameraPage extends StatefulWidget {
@@ -16,6 +19,13 @@ class _CameraPageState extends State<CameraPage> {
 
   final List<XFile> _capturedImages = [];
   static const int maxImages = 5;
+
+  final Map<String, double> _aspectRatios = {
+    '4:3': 4 / 3,
+    '1:1': 1,
+    '16:9': 16 / 9,
+  };
+  String _selectedAspect = '4:3';
 
   @override
   void initState() {
@@ -39,16 +49,45 @@ class _CameraPageState extends State<CameraPage> {
 
     try {
       final image = await _controller!.takePicture();
-      setState(() => _capturedImages.add(image));
 
-      if (_capturedImages.length < maxImages) {
-        _askForAnotherAngle();
-      } else {
-        _navigateToResults();
+      final cropped = await _cropImage(File(image.path));
+      if (cropped != null) {
+        final croppedXFile = XFile(cropped.path);
+        setState(() => _capturedImages.add(croppedXFile));
+
+        if (_capturedImages.length < maxImages) {
+          _askForAnotherAngle();
+        } else {
+          _navigateToResults();
+        }
       }
     } catch (e) {
       debugPrint("Capture failed: $e");
     }
+  }
+
+  Future<File?> _cropImage(File imageFile) async {
+    final cropRatio = _aspectRatios[_selectedAspect]!;
+
+    final croppedFile = await ImageCropper().cropImage(
+      sourcePath: imageFile.path,
+      aspectRatio: CropAspectRatio(ratioX: cropRatio, ratioY: 1),
+      compressFormat: ImageCompressFormat.jpg,
+      compressQuality: 90,
+      uiSettings: [
+        AndroidUiSettings(
+          toolbarTitle: 'Crop Image',
+          toolbarColor: Colors.deepPurple,
+          toolbarWidgetColor: Colors.white,
+          lockAspectRatio: true,
+        ),
+        IOSUiSettings(
+          title: 'Crop Image',
+          aspectRatioLockEnabled: true,
+        ),
+      ],
+    );
+    return croppedFile != null ? File(croppedFile.path) : null;
   }
 
   void _askForAnotherAngle() async {
@@ -93,6 +132,7 @@ class _CameraPageState extends State<CameraPage> {
   @override
   Widget build(BuildContext context) {
     XFile? previewImage = _capturedImages.isNotEmpty ? _capturedImages.last : null;
+    double aspect = _aspectRatios[_selectedAspect]!;
 
     return Scaffold(
       extendBodyBehindAppBar: true,
@@ -101,6 +141,28 @@ class _CameraPageState extends State<CameraPage> {
         elevation: 0,
         title: const Text("📷 Image Capture", style: TextStyle(fontWeight: FontWeight.bold)),
         leading: const BackButton(color: Colors.white),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 12),
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<String>(
+                dropdownColor: Colors.black87,
+                value: _selectedAspect,
+                items: _aspectRatios.keys
+                    .map((key) => DropdownMenuItem(
+                          value: key,
+                          child: Text(key, style: const TextStyle(color: Colors.white)),
+                        ))
+                    .toList(),
+                onChanged: (value) {
+                  if (value != null) {
+                    setState(() => _selectedAspect = value);
+                  }
+                },
+              ),
+            ),
+          ),
+        ],
       ),
       body: Container(
         decoration: const BoxDecoration(
@@ -123,7 +185,7 @@ class _CameraPageState extends State<CameraPage> {
                       ),
                     ),
 
-                    // Preview
+                    // Camera Preview with Framing Box
                     Container(
                       margin: const EdgeInsets.symmetric(horizontal: 30),
                       height: 250,
@@ -140,9 +202,27 @@ class _CameraPageState extends State<CameraPage> {
                       ),
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(20),
-                        child: previewImage == null
-                            ? CameraPreview(_controller!)
-                            : Image.file(File(previewImage.path), fit: BoxFit.cover),
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            previewImage == null
+                                ? CameraPreview(_controller!)
+                                : Image.file(File(previewImage.path), fit: BoxFit.cover),
+
+                            // Framing Overlay Box
+                            Align(
+                              alignment: Alignment.center,
+                              child: AspectRatio(
+                                aspectRatio: aspect,
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    border: Border.all(color: Colors.greenAccent, width: 2),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
 
