@@ -1,8 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
-import 'package:path/path.dart';
-import 'package:path_provider/path_provider.dart';
 import 'results_page.dart';
 
 class CameraPage extends StatefulWidget {
@@ -14,8 +12,11 @@ class CameraPage extends StatefulWidget {
 
 class _CameraPageState extends State<CameraPage> {
   CameraController? _controller;
-  XFile? _capturedImage;
   bool _isCameraInitialized = false;
+
+  XFile? _firstImage;
+  XFile? _secondImage;
+  bool _isCapturingSecond = false;
 
   @override
   void initState() {
@@ -27,7 +28,6 @@ class _CameraPageState extends State<CameraPage> {
     try {
       final cameras = await availableCameras();
       _controller = CameraController(cameras[0], ResolutionPreset.medium);
-
       await _controller!.initialize();
       setState(() => _isCameraInitialized = true);
     } catch (e) {
@@ -40,14 +40,62 @@ class _CameraPageState extends State<CameraPage> {
 
     try {
       final image = await _controller!.takePicture();
-      setState(() => _capturedImage = image);
+
+      if (!_isCapturingSecond) {
+        setState(() => _firstImage = image);
+        _askForSecondAngle();
+      } else {
+        setState(() => _secondImage = image);
+        _navigateToResults();
+      }
     } catch (e) {
       debugPrint("Capture failed: $e");
     }
   }
 
-  void _retakeImage() {
-    setState(() => _capturedImage = null);
+  void _askForSecondAngle() async {
+    bool takeSecond = await showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text("Multi-angle Capture"),
+        content: const Text("Do you want to take another angle for better accuracy?"),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text("No")),
+          ElevatedButton(onPressed: () => Navigator.pop(context, true), child: const Text("Yes")),
+        ],
+      ),
+    );
+
+    if (takeSecond) {
+      setState(() {
+        _isCapturingSecond = true;
+        _secondImage = null;
+      });
+    } else {
+      _navigateToResults();
+    }
+  }
+
+  void _navigateToResults() {
+    if (_firstImage != null) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ResultsPage(
+            firstImagePath: _firstImage!.path,
+            secondImagePath: _secondImage?.path,
+          ),
+        ),
+      );
+    }
+  }
+
+  void _resetCapture() {
+    setState(() {
+      _firstImage = null;
+      _secondImage = null;
+      _isCapturingSecond = false;
+    });
   }
 
   @override
@@ -58,6 +106,8 @@ class _CameraPageState extends State<CameraPage> {
 
   @override
   Widget build(BuildContext context) {
+    XFile? previewImage = _secondImage ?? _firstImage;
+
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
@@ -104,9 +154,9 @@ class _CameraPageState extends State<CameraPage> {
                       ),
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(20),
-                        child: _capturedImage == null
+                        child: previewImage == null
                             ? CameraPreview(_controller!)
-                            : Image.file(File(_capturedImage!.path), fit: BoxFit.cover),
+                            : Image.file(File(previewImage.path), fit: BoxFit.cover),
                       ),
                     ),
 
@@ -119,28 +169,23 @@ class _CameraPageState extends State<CameraPage> {
                           color1: Colors.deepPurple,
                           color2: Colors.indigo,
                           icon: Icons.refresh,
-                          onPressed: _retakeImage,
+                          onPressed: _resetCapture,
                         ),
                         _buildRoundedButton(
-                          label: _capturedImage == null ? "Capture" : "Process",
+                          label: previewImage == null
+                              ? "Capture"
+                              : (_isCapturingSecond ? "Capture 2nd" : "Process"),
                           color1: Colors.teal,
                           color2: Colors.cyan,
-                          icon: _capturedImage == null ? Icons.camera_alt : Icons.check,
-                          onPressed: () {
-                            if (_capturedImage == null) {
-                              _captureImage();
-                            } else {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(builder: (_) => const ResultsPage()),
-                              );
-                            }
-                          },
+                          icon: previewImage == null
+                              ? Icons.camera_alt
+                              : (_isCapturingSecond ? Icons.camera_alt_outlined : Icons.check),
+                          onPressed: _captureImage,
                         ),
                       ],
                     ),
 
-                    // Optional helper note
+                    // Tip
                     Container(
                       margin: const EdgeInsets.symmetric(horizontal: 20),
                       padding: const EdgeInsets.all(12),
@@ -149,7 +194,7 @@ class _CameraPageState extends State<CameraPage> {
                         borderRadius: BorderRadius.circular(15),
                       ),
                       child: const Text(
-                        "⚡ Tip: Ensure your camera is steady and focused for the best recognition results.",
+                        "⚡ Tip: Take multiple angles for better recognition accuracy.",
                         textAlign: TextAlign.center,
                         style: TextStyle(color: Colors.white),
                       ),
