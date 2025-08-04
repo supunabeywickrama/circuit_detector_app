@@ -1,8 +1,10 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:photo_view/photo_view.dart';
+import 'package:photo_view/photo_view_gallery.dart';
 
-class ResultsPage extends StatelessWidget {
+class ResultsPage extends StatefulWidget {
   final List<String> imagePaths;
 
   const ResultsPage({
@@ -11,10 +13,89 @@ class ResultsPage extends StatelessWidget {
   }) : super(key: key);
 
   @override
+  State<ResultsPage> createState() => _ResultsPageState();
+}
+
+class _ResultsPageState extends State<ResultsPage> {
+  late List<String> imagePaths;
+
+  @override
+  void initState() {
+    super.initState();
+    imagePaths = List.from(widget.imagePaths);
+  }
+
+  void _showZoomableImage(int initialIndex) {
+    showDialog(
+      context: context,
+      builder: (_) => Dialog(
+        child: Container(
+          height: 400,
+          child: PhotoViewGallery.builder(
+            itemCount: imagePaths.length,
+            pageController: PageController(initialPage: initialIndex),
+            builder: (context, index) {
+              return PhotoViewGalleryPageOptions(
+                imageProvider: FileImage(File(imagePaths[index])),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _confirmDelete(int index) {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text("Delete Image"),
+        content: const Text("Are you sure you want to remove this image?"),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("Cancel"),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              setState(() {
+                imagePaths.removeAt(index);
+              });
+              Navigator.pop(context);
+            },
+            child: const Text("Delete"),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _retakeImage(int index) {
+    // 🔄 Replace this with actual navigation to camera with index reference.
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text("Retake logic not implemented. Index: $index")),
+    );
+  }
+
+  void _shareResults() {
+    // 📨 Share logic placeholder
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text("Share/export feature coming soon!")),
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text("Detection Results"),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.share),
+            tooltip: "Export / Share Results",
+            onPressed: _shareResults,
+          )
+        ],
       ),
       body: Padding(
         padding: const EdgeInsets.all(20.0),
@@ -47,7 +128,7 @@ class ResultsPage extends StatelessWidget {
               ),
               const SizedBox(height: 30),
 
-              /// Show all captured images
+              /// 📸 Captured Image List
               if (imagePaths.isNotEmpty)
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -56,19 +137,57 @@ class ResultsPage extends StatelessWidget {
                         style: TextStyle(
                             fontSize: 18, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 10),
-                    for (int i = 0; i < imagePaths.length; i++)
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text("• Angle ${i + 1}:"),
-                          const SizedBox(height: 5),
-                          Image.file(
-                            File(imagePaths[i]),
-                            height: 200,
-                          ),
-                          const SizedBox(height: 20),
-                        ],
-                      ),
+                    ListView.builder(
+                      itemCount: imagePaths.length,
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemBuilder: (context, index) {
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text("• Angle ${index + 1}:"),
+                            const SizedBox(height: 5),
+                            Stack(
+                              children: [
+                                GestureDetector(
+                                  onTap: () => _showZoomableImage(index),
+                                  child: ClipRRect(
+                                    borderRadius: BorderRadius.circular(10),
+                                    child: Image.file(
+                                      File(imagePaths[index]),
+                                      height: 200,
+                                      width: double.infinity,
+                                      fit: BoxFit.cover,
+                                    ),
+                                  ),
+                                ),
+                                Positioned(
+                                  top: 8,
+                                  right: 8,
+                                  child: Row(
+                                    children: [
+                                      IconButton(
+                                        icon: const Icon(Icons.refresh,
+                                            color: Colors.white),
+                                        tooltip: "Retake",
+                                        onPressed: () => _retakeImage(index),
+                                      ),
+                                      IconButton(
+                                        icon: const Icon(Icons.delete,
+                                            color: Colors.red),
+                                        tooltip: "Delete",
+                                        onPressed: () => _confirmDelete(index),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 20),
+                          ],
+                        );
+                      },
+                    ),
                   ],
                 ),
             ],

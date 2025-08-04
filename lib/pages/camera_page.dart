@@ -1,9 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
-import 'package:image_cropper/image_cropper.dart';
-import 'package:path/path.dart' as path;
-import 'package:path_provider/path_provider.dart';
 import 'results_page.dart';
 
 class CameraPage extends StatefulWidget {
@@ -49,45 +46,16 @@ class _CameraPageState extends State<CameraPage> {
 
     try {
       final image = await _controller!.takePicture();
+      setState(() => _capturedImages.add(image));
 
-      final cropped = await _cropImage(File(image.path));
-      if (cropped != null) {
-        final croppedXFile = XFile(cropped.path);
-        setState(() => _capturedImages.add(croppedXFile));
-
-        if (_capturedImages.length < maxImages) {
-          _askForAnotherAngle();
-        } else {
-          _navigateToResults();
-        }
+      if (_capturedImages.length < maxImages) {
+        _askForAnotherAngle();
+      } else {
+        _navigateToResults();
       }
     } catch (e) {
       debugPrint("Capture failed: $e");
     }
-  }
-
-  Future<File?> _cropImage(File imageFile) async {
-    final cropRatio = _aspectRatios[_selectedAspect]!;
-
-    final croppedFile = await ImageCropper().cropImage(
-      sourcePath: imageFile.path,
-      aspectRatio: CropAspectRatio(ratioX: cropRatio, ratioY: 1),
-      compressFormat: ImageCompressFormat.jpg,
-      compressQuality: 90,
-      uiSettings: [
-        AndroidUiSettings(
-          toolbarTitle: 'Crop Image',
-          toolbarColor: Colors.deepPurple,
-          toolbarWidgetColor: Colors.white,
-          lockAspectRatio: true,
-        ),
-        IOSUiSettings(
-          title: 'Crop Image',
-          aspectRatioLockEnabled: true,
-        ),
-      ],
-    );
-    return croppedFile != null ? File(croppedFile.path) : null;
   }
 
   void _askForAnotherAngle() async {

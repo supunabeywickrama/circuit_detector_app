@@ -20,7 +20,7 @@ class MyApp extends StatelessWidget {
       child: Consumer<ThemeProvider>(
         builder: (context, themeProvider, child) {
           return MaterialApp(
-            title: 'Circuit Detector ⚡',
+            title: 'Circuit Component Detector ⚡',
             themeMode: themeProvider.themeMode,
             theme: ThemeData(
               colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),

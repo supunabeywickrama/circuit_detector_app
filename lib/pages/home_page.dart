@@ -1,10 +1,46 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:image_cropper/image_cropper.dart';
+
 import 'camera_page.dart';
 import 'history_page.dart';
 import 'settings_page.dart';
+import 'results_page.dart'; // Make sure this import points to your ResultsPage
 
 class HomePage extends StatelessWidget {
   const HomePage({super.key});
+
+  Future<void> _pickImageFromGallery(BuildContext context) async {
+    final picker = ImagePicker();
+    final pickedFile = await picker.pickImage(source: ImageSource.gallery);
+
+    if (pickedFile != null) {
+      CroppedFile? croppedFile = await ImageCropper().cropImage(
+        sourcePath: pickedFile.path,
+        uiSettings: [
+          AndroidUiSettings(
+            toolbarTitle: 'Crop Image',
+            toolbarColor: Colors.deepPurple,
+            toolbarWidgetColor: Colors.white,
+            lockAspectRatio: false,
+          ),
+          IOSUiSettings(
+            title: 'Crop Image',
+          ),
+        ],
+      );
+
+      if (croppedFile != null) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => ResultsPage(imagePaths: [croppedFile.path]),
+          ),
+        );
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -13,7 +49,7 @@ class HomePage extends StatelessWidget {
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        title: const Text("Circuit Detector ⚡", style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text("E-Component Detector ⚡", style: TextStyle(fontWeight: FontWeight.bold)),
         actions: [
           IconButton(
             icon: const Icon(Icons.settings),
@@ -50,7 +86,7 @@ class HomePage extends StatelessWidget {
                   ),
                   const SizedBox(height: 5),
                   const Text(
-                    "Circuit Detector",
+                    "E-Component Detector",
                     style: TextStyle(
                       fontSize: 32,
                       fontWeight: FontWeight.bold,
@@ -84,6 +120,15 @@ class HomePage extends StatelessWidget {
                         MaterialPageRoute(builder: (_) => const HistoryPage()),
                       );
                     },
+                  ),
+                  const SizedBox(height: 20),
+
+                  // NEW: Pick from Gallery Button
+                  _buildGradientButton(
+                    text: 'Pick from Gallery',
+                    icon: Icons.photo_library,
+                    gradientColors: const [Color(0xFFFD6E6A), Color(0xFFFFA07A)],
+                    onPressed: () => _pickImageFromGallery(context),
                   ),
                 ],
               ),
