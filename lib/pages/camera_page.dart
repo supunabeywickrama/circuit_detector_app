@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import 'results_page.dart';
@@ -48,6 +49,13 @@ class _CameraPageState extends State<CameraPage> {
       final image = await _controller!.takePicture();
       setState(() => _capturedImages.add(image));
 
+      // 🔹 Mock blurry detection
+      bool isBlurry = Random().nextDouble() < 0.3; // 30% chance
+
+      if (isBlurry) {
+        await _showBlurryWarning();
+      }
+
       if (_capturedImages.length < maxImages) {
         _askForAnotherAngle();
       } else {
@@ -56,6 +64,21 @@ class _CameraPageState extends State<CameraPage> {
     } catch (e) {
       debugPrint("Capture failed: $e");
     }
+  }
+
+  Future<void> _showBlurryWarning() async {
+    await showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text("⚠ Blurry Image Detected"),
+        content: const Text(
+            "This photo appears blurry. You may want to retake it for better accuracy."),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context), child: const Text("OK")),
+        ],
+      ),
+    );
   }
 
   void _askForAnotherAngle() async {
