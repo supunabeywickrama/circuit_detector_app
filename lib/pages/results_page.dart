@@ -1,16 +1,12 @@
 import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:photo_view/photo_view.dart';
 import 'package:photo_view/photo_view_gallery.dart';
+import '../services/api_service.dart';
 
 class ResultsPage extends StatefulWidget {
   final List<String> imagePaths;
-
-  const ResultsPage({
-    Key? key,
-    required this.imagePaths,
-  }) : super(key: key);
+  const ResultsPage({Key? key, required this.imagePaths}) : super(key: key);
 
   @override
   State<ResultsPage> createState() => _ResultsPageState();
@@ -19,26 +15,83 @@ class ResultsPage extends StatefulWidget {
 class _ResultsPageState extends State<ResultsPage> {
   late List<String> imagePaths;
 
+  bool _loading = true;
+  String? _error;
+
+  bool _anyBlurred = false;
+  final List<Map<String, dynamic>> _allComponents = [];
+  List<Map<String, dynamic>> _detectionsForFirst = []; // to draw boxes on first image
+
   @override
   void initState() {
     super.initState();
     imagePaths = List.from(widget.imagePaths);
+    _runDetections();
+  }
+
+  Future<void> _runDetections() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+      _anyBlurred = false;
+      _allComponents.clear();
+      _detectionsForFirst = [];
+    });
+
+    try {
+      if (imagePaths.isEmpty) {
+        setState(() {
+          _loading = false;
+          _error = "No image to process.";
+        });
+        return;
+      }
+
+      // Call backend for the FIRST image (for now)
+      final json = await ApiService.detectSingle(imagePaths.first);
+
+      // Defensive parsing
+      final blurred = json["blurred"] == true;
+      final compsRaw = json["components"];
+      final comps = (compsRaw is List)
+          ? compsRaw.map((e) => Map<String, dynamic>.from(e)).toList()
+          : <Map<String, dynamic>>[];
+
+      _anyBlurred = blurred;
+      _allComponents.addAll(comps);
+      _detectionsForFirst = comps;
+
+      setState(() {
+        _loading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _loading = false;
+        _error = e.toString();
+      });
+    }
+  }
+
+  List<Map<String, dynamic>> _byType(String startsWith) {
+    return _allComponents
+        .where((c) => (c["type"] as String? ?? "")
+            .toLowerCase()
+            .startsWith(startsWith.toLowerCase()))
+        .toList();
   }
 
   void _showZoomableImage(int initialIndex) {
     showDialog(
       context: context,
       builder: (_) => Dialog(
-        child: Container(
+        child: SizedBox(
           height: 400,
           child: PhotoViewGallery.builder(
             itemCount: imagePaths.length,
             pageController: PageController(initialPage: initialIndex),
-            builder: (context, index) {
-              return PhotoViewGalleryPageOptions(
-                imageProvider: FileImage(File(imagePaths[index])),
-              );
-            },
+            builder: (context, index) => PhotoViewGalleryPageOptions(
+              imageProvider: FileImage(File(imagePaths[index])),
+            ),
           ),
         ),
       ),
@@ -52,10 +105,7 @@ class _ResultsPageState extends State<ResultsPage> {
         title: const Text("Delete Image"),
         content: const Text("Are you sure you want to remove this image?"),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text("Cancel"),
-          ),
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text("Cancel")),
           ElevatedButton(
             onPressed: () {
               setState(() {
@@ -71,129 +121,230 @@ class _ResultsPageState extends State<ResultsPage> {
   }
 
   void _retakeImage(int index) {
-    // 🔄 Replace this with actual navigation to camera with index reference.
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text("Retake logic not implemented. Index: $index")),
     );
   }
 
   void _shareResults() {
-    // 📨 Share logic placeholder
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text("Share/export feature coming soon!")),
     );
   }
 
+  /// Draw image with YOLO boxes (assumes bbox coords are pixel coords)
+  Widget _buildDetectionImage(File imageFile, List<Map<String, dynamic>> comps) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return Stack(
+          children: [
+            Image.file(
+              imageFile,
+              height: 200,
+              width: double.infinity,
+              fit: BoxFit.cover,
+            ),
+            ...comps.map((det) {
+              final bbox = (det["bbox"] as List?) ?? const [];
+              if (bbox.length != 4) return const SizedBox.shrink();
+
+              final double x1 = (bbox[0] as num).toDouble();
+              final double y1 = (bbox[1] as num).toDouble();
+              final double x2 = (bbox[2] as num).toDouble();
+              final double y2 = (bbox[3] as num).toDouble();
+
+              // Since we don’t know original image size vs displayed size,
+              // we draw directly with given pixels. For perfect overlay,
+              // pass original image size from backend and scale here.
+
+              return Positioned(
+                left: x1,
+                top: y1,
+                width: (x2 - x1),
+                height: (y2 - y1),
+                child: IgnorePointer(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.greenAccent, width: 2),
+                    ),
+                    child: Align(
+                      alignment: Alignment.topLeft,
+                      child: Container(
+                        color: Colors.greenAccent.withOpacity(0.75),
+                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                        child: Text(
+                          "${det["type"] ?? "obj"} (${(((det["confidence"] ?? 0.0) as num) * 100).toStringAsFixed(0)}%)",
+                          style: const TextStyle(fontSize: 10, color: Colors.black),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            })
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text("Detection Results"),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.share),
-            tooltip: "Export / Share Results",
-            onPressed: _shareResults,
-          )
-        ],
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(20.0),
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text("🟡 Resistors:",
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 10),
-              const Text("• Resistor 01 → 100kΩ"),
-              const Text("• Resistor 02 → 47kΩ"),
-              const SizedBox(height: 30),
-              const Text("🔵 ICs:",
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 10),
-              Row(
+    Widget body;
+
+    if (_loading) {
+      body = const Center(child: CircularProgressIndicator());
+    } else if (_error != null) {
+      body = Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.error, color: Colors.red, size: 40),
+            const SizedBox(height: 8),
+            Text("Failed to detect:\n$_error", textAlign: TextAlign.center),
+            const SizedBox(height: 8),
+            ElevatedButton(onPressed: _runDetections, child: const Text("Retry")),
+          ],
+        ),
+      );
+    } else {
+      final resistors = _byType("resistor");
+      final ics = _allComponents.where((c) => (c["type"] as String? ?? "").toLowerCase() == "ic").toList();
+      final others = _allComponents.where((c) {
+        final t = (c["type"] as String? ?? "").toLowerCase();
+        return !(t.startsWith("resistor") || t == "ic");
+      }).toList();
+
+      body = SingleChildScrollView(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (_anyBlurred)
+              Container(
+                margin: const EdgeInsets.only(bottom: 14),
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.amber.shade700,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Text(
+                  "⚠ Some images look blurry. You may want to retake for better accuracy.",
+                  style: TextStyle(color: Colors.white),
+                ),
+              ),
+
+            const Text("🟡 Resistors:", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            if (resistors.isEmpty) const Text("• none")
+            else ...resistors.map((r) {
+              final val = r["extra"]?["value"] ?? "";
+              final conf = (r["confidence"] ?? 0.0).toString();
+              return Text("• Resistor → ${val.toString().isEmpty ? "value N/A" : val}  (conf: $conf)");
+            }),
+
+            const SizedBox(height: 22),
+            const Text("🔵 ICs:", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            if (ics.isEmpty) const Text("• none")
+            else ...ics.map((ic) {
+              final ocr = ic["extra"]?["ocr"] ?? "";
+              final conf = (ic["confidence"] ?? 0.0).toString();
+              return Row(
                 children: [
-                  const Text("IC 01:", style: TextStyle(fontSize: 16)),
+                  Expanded(child: Text("• IC → ${ocr.toString().isEmpty ? "unreadable" : ocr}  (conf: $conf)")),
                   const SizedBox(width: 10),
-                  Expanded(
+                  SizedBox(
+                    width: 180,
                     child: TextField(
                       decoration: const InputDecoration(
-                        hintText: 'Enter IC value manually',
+                        hintText: 'Enter IC manually',
                         border: OutlineInputBorder(),
+                        contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                       ),
                     ),
                   ),
                 ],
-              ),
-              const SizedBox(height: 30),
+              );
+            }),
 
-              /// 📸 Captured Image List
-              if (imagePaths.isNotEmpty)
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text("📸 Captured Images:",
-                        style: TextStyle(
-                            fontSize: 18, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 10),
-                    ListView.builder(
-                      itemCount: imagePaths.length,
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      itemBuilder: (context, index) {
-                        return Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text("• Angle ${index + 1}:"),
-                            const SizedBox(height: 5),
-                            Stack(
+            const SizedBox(height: 22),
+            const Text("🧩 Others:", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            if (others.isEmpty) const Text("• none")
+            else ...others.map((o) {
+              final t = o["type"];
+              final conf = (o["confidence"] ?? 0.0).toString();
+              return Text("• $t  (conf: $conf)");
+            }),
+
+            const SizedBox(height: 28),
+            if (imagePaths.isNotEmpty) ...[
+              const Text("📸 Captured Images:", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 10),
+              ListView.builder(
+                itemCount: imagePaths.length,
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemBuilder: (context, index) {
+                  final file = File(imagePaths[index]);
+
+                  // Draw detections only on the first image (where we ran detection)
+                  final comps = (index == 0) ? _detectionsForFirst : const <Map<String, dynamic>>[];
+
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text("• Angle ${index + 1}:"),
+                      const SizedBox(height: 5),
+                      Stack(
+                        children: [
+                          GestureDetector(
+                            onTap: () => _showZoomableImage(index),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(10),
+                              child: _buildDetectionImage(file, comps),
+                            ),
+                          ),
+                          Positioned(
+                            top: 8,
+                            right: 8,
+                            child: Row(
                               children: [
-                                GestureDetector(
-                                  onTap: () => _showZoomableImage(index),
-                                  child: ClipRRect(
-                                    borderRadius: BorderRadius.circular(10),
-                                    child: Image.file(
-                                      File(imagePaths[index]),
-                                      height: 200,
-                                      width: double.infinity,
-                                      fit: BoxFit.cover,
-                                    ),
-                                  ),
+                                IconButton(
+                                  icon: const Icon(Icons.refresh, color: Colors.white),
+                                  tooltip: "Retake",
+                                  onPressed: () => _retakeImage(index),
                                 ),
-                                Positioned(
-                                  top: 8,
-                                  right: 8,
-                                  child: Row(
-                                    children: [
-                                      IconButton(
-                                        icon: const Icon(Icons.refresh,
-                                            color: Colors.white),
-                                        tooltip: "Retake",
-                                        onPressed: () => _retakeImage(index),
-                                      ),
-                                      IconButton(
-                                        icon: const Icon(Icons.delete,
-                                            color: Colors.red),
-                                        tooltip: "Delete",
-                                        onPressed: () => _confirmDelete(index),
-                                      ),
-                                    ],
-                                  ),
+                                IconButton(
+                                  icon: const Icon(Icons.delete, color: Colors.red),
+                                  tooltip: "Delete",
+                                  onPressed: () => _confirmDelete(index),
                                 ),
                               ],
                             ),
-                            const SizedBox(height: 20),
-                          ],
-                        );
-                      },
-                    ),
-                  ],
-                ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 20),
+                    ],
+                  );
+                },
+              ),
             ],
-          ),
+          ],
         ),
+      );
+    }
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text("Detection Results"),
+        actions: [
+          IconButton(icon: const Icon(Icons.share), tooltip: "Export / Share Results", onPressed: _shareResults),
+        ],
       ),
+      body: body,
     );
   }
 }

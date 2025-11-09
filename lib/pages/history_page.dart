@@ -10,7 +10,7 @@ class HistoryPage extends StatefulWidget {
 }
 
 class _HistoryPageState extends State<HistoryPage> {
-  List<Map<String, dynamic>> _historyList = [
+  final List<Map<String, dynamic>> _historyList = [
     {
       'timestamp': '2025-07-14 14:30',
       'resistors': ['100kΩ', '47kΩ'],

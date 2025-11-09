@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- Replace 192.168.X.X with your PC’s LAN IP for FastAPI -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">192.168.X.X</domain>
+    </domain-config>
+</network-security-config>
