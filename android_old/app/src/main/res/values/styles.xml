@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Shown while Flutter initializes -->
+    <style name="LaunchTheme" parent="@style/Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="android:windowBackground">@drawable/launch_background</item>
+    </style>
+
+    <!-- Used after Flutter renders -->
+    <style name="NormalTheme" parent="@style/Theme.MaterialComponents.DayNight.NoActionBar" />
+
+    <!-- Theme used by uCrop activity -->
+    <style name="UCropActivityTheme" parent="@style/Theme.MaterialComponents.DayNight.NoActionBar" />
+</resources>

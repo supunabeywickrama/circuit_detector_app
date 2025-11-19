@@ -4,7 +4,7 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 
 class ApiService {
-  static const String _baseUrl = "http://127.0.0.1:8000"; // or your LAN IP
+  static const String _baseUrl = "http://192.168.8.123:8000"; // or your LAN IP
 
   static Future<Map<String, dynamic>> detectSingle(String imagePath) async {
     final uri = Uri.parse("$_baseUrl/detect");
@@ -15,8 +15,8 @@ class ApiService {
     final resp = await http.Response.fromStream(streamed);
 
     // Helpful logging
-    // print("DETECT status: ${resp.statusCode}");
-    // print("DETECT body: ${resp.body}");
+    print("DETECT status: ${resp.statusCode}");
+    print("DETECT body: ${resp.body}");
 
     if (resp.statusCode != 200) {
       throw Exception("Backend error ${resp.statusCode}: ${resp.body}");
