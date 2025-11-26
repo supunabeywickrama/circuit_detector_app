@@ -4,7 +4,7 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 
 class ApiService {
-  static const String _baseUrl = "http://192.168.8.123:8000"; // or your LAN IP
+  static const String _baseUrl = "http://172.19.44.45:8000"; // or your LAN IP
 
   static Future<Map<String, dynamic>> detectSingle(String imagePath) async {
     final uri = Uri.parse("$_baseUrl/detect");

@@ -22,8 +22,15 @@ class _ResultsPageState extends State<ResultsPage> {
   String? _error;
 
   bool _anyBlurred = false;
+
+  /// All detections merged (for text summary)
   final List<Map<String, dynamic>> _allComponents = [];
-  List<Map<String, dynamic>> _detectionsForFirst = []; // for drawing boxes
+
+  /// Per-image detections: path -> detections
+  final Map<String, List<Map<String, dynamic>>> _detectionsPerPath = {};
+
+  /// Per-image original size from backend: path -> Size(width, height)
+  final Map<String, Size> _imageSizesPerPath = {};
 
   @override
   void initState() {
@@ -38,7 +45,8 @@ class _ResultsPageState extends State<ResultsPage> {
       _error = null;
       _anyBlurred = false;
       _allComponents.clear();
-      _detectionsForFirst = [];
+      _detectionsPerPath.clear();
+      _imageSizesPerPath.clear();
     });
 
     try {
@@ -50,52 +58,63 @@ class _ResultsPageState extends State<ResultsPage> {
         return;
       }
 
-      // 🔹 Call backend for the FIRST image
-      final json = await ApiService.detectSingle(imagePaths.first);
+      // 🔹 Run detection for EACH image
+      for (final path in imagePaths) {
+        final json = await ApiService.detectSingle(path);
 
-      final blurred = json["blurred"] == true;
-      _anyBlurred = blurred;
+        final blurred = json["blurred"] == true;
+        if (blurred) _anyBlurred = true;
 
-      final detectionsRaw = json["detections"];
-      List<Map<String, dynamic>> comps = [];
-
-      if (detectionsRaw is List) {
-        comps = detectionsRaw.map<Map<String, dynamic>>((e) {
-          // raw detection from backend
-          final raw = Map<String, dynamic>.from(e as Map);
-
-          final label = (raw["label"] ?? "").toString();
-          final conf = (raw["confidence"] ?? 0.0) as num;
-
-          final bboxRaw = raw["bbox"];
-          List<double> bbox;
-          if (bboxRaw is List) {
-            bbox = bboxRaw
-                .map((v) => (v as num).toDouble())
-                .toList(); // [x1,y1,x2,y2]
-          } else {
-            bbox = const <double>[];
+        // ---- image size ----
+        final imgInfo = json["image"];
+        if (imgInfo is Map) {
+          final w = (imgInfo["width"] as num?)?.toDouble();
+          final h = (imgInfo["height"] as num?)?.toDouble();
+          if (w != null && h != null && w > 0 && h > 0) {
+            _imageSizesPerPath[path] = Size(w, h);
           }
+        }
 
-          final extraRaw = raw["extra"];
-          final extra = (extraRaw is Map)
-              ? Map<String, dynamic>.from(extraRaw as Map)
-              : <String, dynamic>{};
+        // ---- detections ----
+        final detectionsRaw = json["detections"];
+        List<Map<String, dynamic>> comps = [];
 
-          // 🔁 Normalize to the structure the UI expects
-          return {
-            "type": label,
-            "bbox": bbox,
-            "confidence": conf.toDouble(),
-            "extra": extra,
-          };
-        }).toList();
+        if (detectionsRaw is List) {
+          comps = detectionsRaw.map<Map<String, dynamic>>((e) {
+            final raw = Map<String, dynamic>.from(e as Map);
+
+            final label = (raw["label"] ?? "").toString();
+            final conf = (raw["confidence"] ?? 0.0) as num;
+
+            final bboxRaw = raw["bbox"];
+            List<double> bbox;
+            if (bboxRaw is List) {
+              bbox = bboxRaw
+                  .map((v) => (v as num).toDouble())
+                  .toList(); // [x1,y1,x2,y2]
+            } else {
+              bbox = const <double>[];
+            }
+
+            final extraRaw = raw["extra"];
+            final extra = (extraRaw is Map)
+                ? Map<String, dynamic>.from(extraRaw as Map)
+                : <String, dynamic>{};
+
+            return {
+              "type": label,
+              "bbox": bbox,
+              "confidence": conf.toDouble(),
+              "extra": extra,
+            };
+          }).toList();
+        }
+
+        _detectionsPerPath[path] = comps;
+        _allComponents.addAll(comps);
       }
 
-      _allComponents.addAll(comps);
-      _detectionsForFirst = comps;
-
-      debugPrint("Detections count (parsed): ${_allComponents.length}");
+      debugPrint("Total detections across images: ${_allComponents.length}");
 
       setState(() {
         _loading = false;
@@ -148,8 +167,14 @@ class _ResultsPageState extends State<ResultsPage> {
           ),
           ElevatedButton(
             onPressed: () {
+              final removedPath = imagePaths[index];
               setState(() {
                 imagePaths.removeAt(index);
+                _detectionsPerPath.remove(removedPath);
+                _imageSizesPerPath.remove(removedPath);
+                _allComponents
+                  ..clear()
+                  ..addAll(_detectionsPerPath.values.expand((e) => e));
               });
               Navigator.pop(context);
             },
@@ -172,53 +197,74 @@ class _ResultsPageState extends State<ResultsPage> {
     );
   }
 
-  /// Draw image with YOLO boxes (we assume bbox coords are in original pixels)
-  Widget _buildDetectionImage(File imageFile, List<Map<String, dynamic>> comps) {
-    return Stack(
-      children: [
-        Image.file(
-          imageFile,
-          height: 200,
-          width: double.infinity,
-          fit: BoxFit.cover,
-        ),
-        ...comps.map((det) {
-          final bbox = (det["bbox"] as List?) ?? const [];
-          if (bbox.length != 4) return const SizedBox.shrink();
+  /// Image with properly scaled boxes
+  Widget _buildDetectionImage(
+    File imageFile,
+    List<Map<String, dynamic>> comps,
+    Size? originalSize,
+  ) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final displayW = constraints.maxWidth;
+        final displayH = constraints.maxHeight;
 
-          final double x1 = (bbox[0] as num).toDouble();
-          final double y1 = (bbox[1] as num).toDouble();
-          final double x2 = (bbox[2] as num).toDouble();
-          final double y2 = (bbox[3] as num).toDouble();
+        double sx = 1.0;
+        double sy = 1.0;
+        if (originalSize != null) {
+          sx = displayW / originalSize.width;
+          sy = displayH / originalSize.height;
+        }
 
-          return Positioned(
-            left: x1,
-            top: y1,
-            width: (x2 - x1),
-            height: (y2 - y1),
-            child: IgnorePointer(
-              child: Container(
-                decoration: BoxDecoration(
-                  border: Border.all(color: Colors.greenAccent, width: 2),
-                ),
-                child: Align(
-                  alignment: Alignment.topLeft,
+        return Stack(
+          children: [
+            Image.file(
+              imageFile,
+              width: displayW,
+              height: displayH,
+              fit: BoxFit.cover,
+            ),
+            ...comps.map((det) {
+              final bbox = (det["bbox"] as List?) ?? const [];
+              if (bbox.length != 4) return const SizedBox.shrink();
+
+              final double x1 = (bbox[0] as num).toDouble() * sx;
+              final double y1 = (bbox[1] as num).toDouble() * sy;
+              final double x2 = (bbox[2] as num).toDouble() * sx;
+              final double y2 = (bbox[3] as num).toDouble() * sy;
+
+              return Positioned(
+                left: x1,
+                top: y1,
+                width: (x2 - x1),
+                height: (y2 - y1),
+                child: IgnorePointer(
                   child: Container(
-                    color: Colors.greenAccent.withOpacity(0.75),
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                    child: Text(
-                      "${det["type"] ?? "obj"} (${(((det["confidence"] ?? 0.0) as num) * 100).toStringAsFixed(0)}%)",
-                      style:
-                          const TextStyle(fontSize: 10, color: Colors.black),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.greenAccent, width: 2),
+                    ),
+                    child: Align(
+                      alignment: Alignment.topLeft,
+                      child: Container(
+                        color: Colors.greenAccent.withOpacity(0.75),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 4, vertical: 2),
+                        child: Text(
+                          "${det["type"] ?? "obj"} "
+                          "(${(((det["confidence"] ?? 0.0) as num) * 100).toStringAsFixed(0)}%)",
+                          style: const TextStyle(
+                            fontSize: 10,
+                            color: Colors.black,
+                          ),
+                        ),
+                      ),
                     ),
                   ),
                 ),
-              ),
-            ),
-          );
-        })
-      ],
+              );
+            })
+          ],
+        );
+      },
     );
   }
 
@@ -250,8 +296,8 @@ class _ResultsPageState extends State<ResultsPage> {
     } else {
       final resistors = _byType("resistor");
       final ics = _allComponents
-          .where((c) =>
-              (c["type"] as String? ?? "").toLowerCase() == "ic")
+          .where(
+              (c) => (c["type"] as String? ?? "").toLowerCase() == "ic")
           .toList();
       final others = _allComponents.where((c) {
         final t = (c["type"] as String? ?? "").toLowerCase();
@@ -283,8 +329,10 @@ class _ResultsPageState extends State<ResultsPage> {
                 ),
               ),
 
-            const Text("🟡 Resistors:",
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const Text(
+              "🟡 Resistors:",
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
             const SizedBox(height: 8),
             if (resistors.isEmpty)
               const Text("• none")
@@ -298,8 +346,10 @@ class _ResultsPageState extends State<ResultsPage> {
               }),
 
             const SizedBox(height: 22),
-            const Text("🔵 ICs:",
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const Text(
+              "🔵 ICs:",
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
             const SizedBox(height: 8),
             if (ics.isEmpty)
               const Text("• none")
@@ -322,7 +372,9 @@ class _ResultsPageState extends State<ResultsPage> {
                           hintText: 'Enter IC manually',
                           border: OutlineInputBorder(),
                           contentPadding: EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 6),
+                            horizontal: 8,
+                            vertical: 6,
+                          ),
                         ),
                       ),
                     ),
@@ -331,8 +383,10 @@ class _ResultsPageState extends State<ResultsPage> {
               }),
 
             const SizedBox(height: 22),
-            const Text("🧩 Others:",
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const Text(
+              "🧩 Others:",
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
             const SizedBox(height: 8),
             if (others.isEmpty)
               const Text("• none")
@@ -345,19 +399,22 @@ class _ResultsPageState extends State<ResultsPage> {
 
             const SizedBox(height: 28),
             if (imagePaths.isNotEmpty) ...[
-              const Text("📸 Captured Images:",
-                  style:
-                      TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              const Text(
+                "📸 Captured Images:",
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
               const SizedBox(height: 10),
               ListView.builder(
                 itemCount: imagePaths.length,
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
                 itemBuilder: (context, index) {
-                  final file = File(imagePaths[index]);
-                  final comps = (index == 0)
-                      ? _detectionsForFirst
-                      : const <Map<String, dynamic>>[];
+                  final path = imagePaths[index];
+                  final file = File(path);
+                  final comps =
+                      _detectionsPerPath[path] ??
+                          const <Map<String, dynamic>>[];
+                  final imgSize = _imageSizesPerPath[path];
 
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -370,7 +427,18 @@ class _ResultsPageState extends State<ResultsPage> {
                             onTap: () => _showZoomableImage(index),
                             child: ClipRRect(
                               borderRadius: BorderRadius.circular(10),
-                              child: _buildDetectionImage(file, comps),
+                              child: AspectRatio(
+                                aspectRatio: (imgSize != null &&
+                                        imgSize.width > 0 &&
+                                        imgSize.height > 0)
+                                    ? imgSize.width / imgSize.height
+                                    : 4 / 3,
+                                child: _buildDetectionImage(
+                                  file,
+                                  comps,
+                                  imgSize,
+                                ),
+                              ),
                             ),
                           ),
                           Positioned(
