@@ -5,6 +5,7 @@ import 'package:photo_view/photo_view.dart';
 import 'package:photo_view/photo_view_gallery.dart';
 
 import '../services/api_service.dart';
+import 'history_page.dart'; // <--- using HistoryStorage.addEntry
 
 class ResultsPage extends StatefulWidget {
   final List<String> imagePaths;
@@ -89,17 +90,13 @@ class _ResultsPageState extends State<ResultsPage> {
             final bboxRaw = raw["bbox"];
             List<double> bbox;
             if (bboxRaw is List) {
-              bbox = bboxRaw
-                  .map((v) => (v as num).toDouble())
-                  .toList(); // [x1,y1,x2,y2]
+              bbox = bboxRaw.map((v) => (v as num).toDouble()).toList(); // [x1,y1,x2,y2]
             } else {
               bbox = const <double>[];
             }
 
             final extraRaw = raw["extra"];
-            final extra = (extraRaw is Map)
-                ? Map<String, dynamic>.from(extraRaw as Map)
-                : <String, dynamic>{};
+            final extra = (extraRaw is Map) ? Map<String, dynamic>.from(extraRaw as Map) : <String, dynamic>{};
 
             return {
               "type": label,
@@ -119,6 +116,9 @@ class _ResultsPageState extends State<ResultsPage> {
       setState(() {
         _loading = false;
       });
+
+      // ----- Save detection to history (non-blocking) -----
+      _saveCurrentDetectionToHistory();
     } catch (e) {
       setState(() {
         _loading = false;
@@ -127,13 +127,75 @@ class _ResultsPageState extends State<ResultsPage> {
     }
   }
 
+  /// Save the current detection summary to local history via HistoryStorage.
+  /// Now saves `all_components` so history page can show full categorized counts.
+  Future<void> _saveCurrentDetectionToHistory() async {
+    try {
+      if (_allComponents.isEmpty) return; // nothing to save
+
+      // Build resistors list (legacy view): take extra.value if present
+      final resistors = _allComponents.where((c) {
+        final t = (c["type"] as String? ?? "").toLowerCase();
+        return t.startsWith("resistor");
+      }).map((r) {
+        final extra = (r["extra"] as Map?) ?? {};
+        final value = (extra["value"] != null && extra["value"].toString().isNotEmpty) ? extra["value"].toString() : "value N/A";
+        return value;
+      }).toList();
+
+      // Build IC list (legacy): use OCR if available
+      final ics = _allComponents.where((c) {
+        final t = (c["type"] as String? ?? "").toLowerCase();
+        return t == "ic";
+      }).map((ic) {
+        final extra = (ic["extra"] as Map?) ?? {};
+        final ocr = (extra["ocr"] != null && extra["ocr"].toString().isNotEmpty) ? extra["ocr"].toString() : "unreadable";
+        return ocr;
+      }).toList();
+
+      // Build counts summary map
+      final Map<String, int> counts = {};
+      for (final c in _allComponents) {
+        final key = (c["type"] ?? "unknown").toString();
+        counts[key] = (counts[key] ?? 0) + 1;
+      }
+
+      // Prepare entry — include full `all_components` so HistoryPage can categorize correctly
+      final entry = <String, dynamic>{
+        'timestamp': DateTime.now().toIso8601String(),
+        'resistors': resistors,
+        'ics': ics,
+        'thumbnailPath': imagePaths.isNotEmpty ? imagePaths.first : null,
+        'notes': null,
+        'all_components': _allComponents.map((c) {
+          // sanitize to ensure JSON-serializable basic types
+          return {
+            'type': c['type'],
+            'bbox': c['bbox'],
+            'confidence': c['confidence'],
+            'extra': c['extra'],
+          };
+        }).toList(),
+        'counts': counts,
+      };
+
+      final ok = await HistoryStorage.addEntry(entry);
+      if (ok) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Saved detection to history.")));
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Failed to save detection to history.")));
+        }
+      }
+    } catch (e) {
+      debugPrint("[ResultsPage] _saveCurrentDetectionToHistory error: $e");
+    }
+  }
+
   List<Map<String, dynamic>> _byType(String startsWith) {
-    return _allComponents
-        .where((c) =>
-            (c["type"] as String? ?? "")
-                .toLowerCase()
-                .startsWith(startsWith.toLowerCase()))
-        .toList();
+    return _allComponents.where((c) => (c["type"] as String? ?? "").toLowerCase().startsWith(startsWith.toLowerCase())).toList();
   }
 
   void _showZoomableImage(int initialIndex) {
@@ -246,15 +308,10 @@ class _ResultsPageState extends State<ResultsPage> {
                       alignment: Alignment.topLeft,
                       child: Container(
                         color: Colors.greenAccent.withOpacity(0.75),
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 4, vertical: 2),
+                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                         child: Text(
-                          "${det["type"] ?? "obj"} "
-                          "(${(((det["confidence"] ?? 0.0) as num) * 100).toStringAsFixed(0)}%)",
-                          style: const TextStyle(
-                            fontSize: 10,
-                            color: Colors.black,
-                          ),
+                          "${det["type"] ?? "obj"} (${(((det["confidence"] ?? 0.0) as num) * 100).toStringAsFixed(0)}%)",
+                          style: const TextStyle(fontSize: 10, color: Colors.black),
                         ),
                       ),
                     ),
@@ -295,10 +352,7 @@ class _ResultsPageState extends State<ResultsPage> {
       );
     } else {
       final resistors = _byType("resistor");
-      final ics = _allComponents
-          .where(
-              (c) => (c["type"] as String? ?? "").toLowerCase() == "ic")
-          .toList();
+      final ics = _allComponents.where((c) => (c["type"] as String? ?? "").toLowerCase() == "ic").toList();
       final others = _allComponents.where((c) {
         final t = (c["type"] as String? ?? "").toLowerCase();
         return !(t.startsWith("resistor") || t == "ic");
@@ -371,10 +425,7 @@ class _ResultsPageState extends State<ResultsPage> {
                         decoration: const InputDecoration(
                           hintText: 'Enter IC manually',
                           border: OutlineInputBorder(),
-                          contentPadding: EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 6,
-                          ),
+                          contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                         ),
                       ),
                     ),
@@ -411,9 +462,7 @@ class _ResultsPageState extends State<ResultsPage> {
                 itemBuilder: (context, index) {
                   final path = imagePaths[index];
                   final file = File(path);
-                  final comps =
-                      _detectionsPerPath[path] ??
-                          const <Map<String, dynamic>>[];
+                  final comps = _detectionsPerPath[path] ?? const <Map<String, dynamic>>[];
                   final imgSize = _imageSizesPerPath[path];
 
                   return Column(
@@ -428,11 +477,7 @@ class _ResultsPageState extends State<ResultsPage> {
                             child: ClipRRect(
                               borderRadius: BorderRadius.circular(10),
                               child: AspectRatio(
-                                aspectRatio: (imgSize != null &&
-                                        imgSize.width > 0 &&
-                                        imgSize.height > 0)
-                                    ? imgSize.width / imgSize.height
-                                    : 4 / 3,
+                                aspectRatio: (imgSize != null && imgSize.width > 0 && imgSize.height > 0) ? imgSize.width / imgSize.height : 4 / 3,
                                 child: _buildDetectionImage(
                                   file,
                                   comps,
@@ -447,17 +492,14 @@ class _ResultsPageState extends State<ResultsPage> {
                             child: Row(
                               children: [
                                 IconButton(
-                                  icon: const Icon(Icons.refresh,
-                                      color: Colors.white),
+                                  icon: const Icon(Icons.refresh, color: Colors.white),
                                   tooltip: "Retake",
                                   onPressed: () => _retakeImage(index),
                                 ),
                                 IconButton(
-                                  icon: const Icon(Icons.delete,
-                                      color: Colors.red),
+                                  icon: const Icon(Icons.delete, color: Colors.red),
                                   tooltip: "Delete",
-                                  onPressed: () =>
-                                      _confirmDelete(index),
+                                  onPressed: () => _confirmDelete(index),
                                 ),
                               ],
                             ),
