@@ -12,9 +12,15 @@ class HomePage extends StatelessWidget {
 
   Future<void> _pickImageFromGallery(BuildContext context) async {
     final picker = ImagePicker();
-    final pickedFile = await picker.pickImage(source: ImageSource.gallery);
 
-    if (pickedFile != null) {
+    // Use pickMultiImage to allow selecting multiple images.
+    final List<XFile>? pickedFiles = await picker.pickMultiImage(imageQuality: 90);
+
+    if (pickedFiles == null || pickedFiles.isEmpty) return;
+
+    // If only one image picked — keep your previous crop flow for single image.
+    if (pickedFiles.length == 1) {
+      final pickedFile = pickedFiles.first;
       CroppedFile? croppedFile = await ImageCropper().cropImage(
         sourcePath: pickedFile.path,
         uiSettings: [
@@ -38,7 +44,17 @@ class HomePage extends StatelessWidget {
           ),
         );
       }
+      return;
     }
+
+    // Multiple images selected — skip cropping and pass all paths to ResultsPage.
+    final paths = pickedFiles.map((f) => f.path).toList();
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ResultsPage(imagePaths: paths),
+      ),
+    );
   }
 
   @override
@@ -122,7 +138,7 @@ class HomePage extends StatelessWidget {
                   ),
                   const SizedBox(height: 20),
 
-                  // NEW: Pick from Gallery Button
+                  // NEW: Pick from Gallery Button (multiple images supported)
                   _buildGradientButton(
                     text: 'Pick from Gallery',
                     icon: Icons.photo_library,
