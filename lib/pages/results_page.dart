@@ -1,5 +1,9 @@
 // lib/pages/results_page.dart
 import 'dart:io';
+import 'dart:async';
+import 'dart:typed_data';
+import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:photo_view/photo_view.dart';
@@ -25,7 +29,7 @@ class _ResultsPageState extends State<ResultsPage> {
 
   bool _anyBlurred = false;
 
-  /// All detections merged (for text summary)
+  /// All detections merged (for text summary). After grouping this becomes grouped components.
   final List<Map<String, dynamic>> _allComponents = [];
 
   /// Per-image detections: path -> detections
@@ -33,6 +37,9 @@ class _ResultsPageState extends State<ResultsPage> {
 
   /// Per-image original size from backend: path -> Size(width, height)
   final Map<String, Size> _imageSizesPerPath = {};
+
+  /// Internal raw detections used for grouping (built from _detectionsPerPath)
+  final List<_RawDetection> _rawDetections = [];
 
   @override
   void initState() {
@@ -49,6 +56,7 @@ class _ResultsPageState extends State<ResultsPage> {
       _allComponents.clear();
       _detectionsPerPath.clear();
       _imageSizesPerPath.clear();
+      _rawDetections.clear();
     });
 
     try {
@@ -65,7 +73,6 @@ class _ResultsPageState extends State<ResultsPage> {
         try {
           await _runMultiDetectionWithFallback();
         } catch (e) {
-          // Fallback to per-image single detection
           debugPrint("[ResultsPage] multi detection failed -> falling back: $e");
           await _runSingleDetections();
         }
@@ -73,7 +80,37 @@ class _ResultsPageState extends State<ResultsPage> {
         await _runSingleDetections();
       }
 
-      debugPrint("Total detections across images: ${_allComponents.length}");
+      // If we have per-image detections (no aggregated components) -> build raw list and group
+      if (_rawDetections.isEmpty) {
+        int idx = 0;
+        for (final path in imagePaths) {
+          final comps = _detectionsPerPath[path] ?? [];
+          for (final c in comps) {
+            final bbox = (c['bbox'] is List) ? (c['bbox'] as List).map((e) => (e as num).toDouble()).toList() : <double>[];
+            _rawDetections.add(_RawDetection(
+              imageIndex: idx,
+              imagePath: path,
+              bbox: bbox,
+              type: (c['type'] ?? 'unknown').toString(),
+              confidence: (c['confidence'] is num) ? (c['confidence'] as num).toDouble() : 0.0,
+              extra: (c['extra'] is Map) ? Map<String, dynamic>.from(c['extra'] as Map) : <String, dynamic>{},
+            ));
+          }
+          idx++;
+        }
+      }
+
+      if (_rawDetections.isNotEmpty && imagePaths.length > 1) {
+        await _groupDetectionsAcrossImages();
+      } else {
+        if (_allComponents.isEmpty) {
+          for (final list in _detectionsPerPath.values) {
+            _allComponents.addAll(list);
+          }
+        }
+      }
+
+      debugPrint("Total detections across images (after grouping): ${_allComponents.length}");
 
       setState(() {
         _loading = false;
@@ -94,6 +131,7 @@ class _ResultsPageState extends State<ResultsPage> {
     _detectionsPerPath.clear();
     _allComponents.clear();
     _imageSizesPerPath.clear();
+    _rawDetections.clear();
 
     for (final path in imagePaths) {
       final json = await ApiService.detectSingle(path);
@@ -143,7 +181,6 @@ class _ResultsPageState extends State<ResultsPage> {
       }
 
       _detectionsPerPath[path] = comps;
-      _allComponents.addAll(comps);
     }
   }
 
@@ -153,36 +190,30 @@ class _ResultsPageState extends State<ResultsPage> {
     _detectionsPerPath.clear();
     _allComponents.clear();
     _imageSizesPerPath.clear();
+    _rawDetections.clear();
 
-    // init per-path lists
     for (final p in imagePaths) _detectionsPerPath[p] = [];
 
     dynamic json;
     try {
-      // NOTE: ApiService.detectMulti must be implemented. If not, this will throw/noSuchMethod.
       json = await ApiService.detectMulti(imagePaths);
     } catch (e) {
       debugPrint("[ResultsPage] detectMulti call threw: $e");
-      // Re-throw so caller falls back to single detections
       rethrow;
     }
 
-    // If backend returned null or non-map, fallback
     if (json == null || json is! Map<String, dynamic>) {
       debugPrint("[ResultsPage] detectMulti returned null/unexpected, falling back to single calls");
-      // Do single-image detections instead
       await _runSingleDetections();
       return;
     }
 
     final Map<String, dynamic> mapJson = json as Map<String, dynamic>;
 
-    // If backend provided "components" aggregated across images (preferred)
     if (mapJson.containsKey("components") && mapJson["components"] is List) {
       final compsRaw = (mapJson["components"] as List).cast<Map>();
       final comps = compsRaw.map((m) => Map<String, dynamic>.from(m)).toList();
 
-      // optional: read image sizes array
       if (mapJson.containsKey("images") && mapJson["images"] is List) {
         final imgs = (mapJson["images"] as List).cast<Map>();
         for (var i = 0; i < imgs.length && i < imagePaths.length; i++) {
@@ -195,7 +226,6 @@ class _ResultsPageState extends State<ResultsPage> {
         }
       }
 
-      // Each component should include "views": list of {image_index, bbox}
       for (final comp in comps) {
         final type = (comp["type"] ?? comp["label"] ?? "unknown").toString();
         final extra = (comp["extra"] is Map) ? Map<String, dynamic>.from(comp["extra"]) : <String, dynamic>{};
@@ -218,7 +248,6 @@ class _ResultsPageState extends State<ResultsPage> {
           }
         }
 
-        // add to master components
         _allComponents.add({
           "id": id,
           "type": type,
@@ -227,7 +256,6 @@ class _ResultsPageState extends State<ResultsPage> {
           "views": views,
         });
 
-        // populate per-image lists
         for (final view in views) {
           final idx = view["image_index"] as int?;
           final bbox = (view["bbox"] as List?) ?? const <double>[];
@@ -244,19 +272,16 @@ class _ResultsPageState extends State<ResultsPage> {
         }
       }
     } else {
-      // No aggregated components — fall back to single-image style structure
       debugPrint("[ResultsPage] detectMulti returned no components key; attempting per-image fallback");
       await _runSingleDetections();
     }
   }
 
   /// Save the current detection summary to local history via HistoryStorage.
-  /// Now saves `all_components` so history page can show full categorized counts.
   Future<void> _saveCurrentDetectionToHistory() async {
     try {
-      if (_allComponents.isEmpty) return; // nothing to save
+      if (_allComponents.isEmpty) return;
 
-      // Build resistors list (legacy view): take extra.value if present
       final resistors = _allComponents.where((c) {
         final t = (c["type"] as String? ?? "").toLowerCase();
         return t.startsWith("resistor");
@@ -266,7 +291,6 @@ class _ResultsPageState extends State<ResultsPage> {
         return value;
       }).toList();
 
-      // Build IC list (legacy): use OCR if available
       final ics = _allComponents.where((c) {
         final t = (c["type"] as String? ?? "").toLowerCase();
         return t == "ic";
@@ -276,14 +300,12 @@ class _ResultsPageState extends State<ResultsPage> {
         return ocr;
       }).toList();
 
-      // Build counts summary map
       final Map<String, int> counts = {};
       for (final c in _allComponents) {
         final key = (c["type"] ?? "unknown").toString();
         counts[key] = (counts[key] ?? 0) + 1;
       }
 
-      // Prepare entry — include full `all_components` so HistoryPage can categorize correctly
       final entry = <String, dynamic>{
         'timestamp': DateTime.now().toIso8601String(),
         'resistors': resistors,
@@ -291,15 +313,17 @@ class _ResultsPageState extends State<ResultsPage> {
         'thumbnailPath': imagePaths.isNotEmpty ? imagePaths.first : null,
         'notes': null,
         'all_components': _allComponents.map((c) {
-          // sanitize to ensure JSON-serializable basic types
-          return {
+          final m = {
             'type': c['type'],
             'bbox': c['bbox'],
             'confidence': c['confidence'],
             'extra': c['extra'],
-            if (c.containsKey('views')) 'views': c['views'],
-            if (c.containsKey('id')) 'id': c['id'],
           };
+          if (c.containsKey('views')) m['views'] = c['views'];
+          if (c.containsKey('id')) m['id'] = c['id'];
+          if (c.containsKey('count')) m['count'] = c['count'];
+          if (c.containsKey('members')) m['members'] = c['members'];
+          return m;
         }).toList(),
         'counts': counts,
       };
@@ -321,6 +345,63 @@ class _ResultsPageState extends State<ResultsPage> {
 
   List<Map<String, dynamic>> _byType(String startsWith) {
     return _allComponents.where((c) => (c["type"] as String? ?? "").toLowerCase().startsWith(startsWith.toLowerCase())).toList();
+  }
+
+  // --- NEW: compute a human-friendly source label for a component ---
+  String _sourceLabelForComponent(Map<String, dynamic> comp) {
+    final indices = _componentSourceIndices(comp);
+    if (indices.isEmpty) return "unknown";
+    indices.sort();
+    if (indices.length == 1) return "only angle ${indices.first}";
+    // join with & as requested: 1&2&3 or 1&3
+    final joined = indices.map((i) => i.toString()).join("&");
+    return "angles: $joined";
+  }
+
+  // returns list of 1-based image indices for a component
+  List<int> _componentSourceIndices(Map<String, dynamic> comp) {
+    final Set<int> out = {};
+    try {
+      // 1) if 'members' present (grouped), use imageIndex entries
+      if (comp.containsKey('members') && comp['members'] is List) {
+        for (final m in (comp['members'] as List)) {
+          if (m is Map && m.containsKey('imageIndex')) {
+            final idx = (m['imageIndex'] is num) ? (m['imageIndex'] as num).toInt() : null;
+            if (idx != null && idx >= 0 && idx < imagePaths.length) out.add(idx + 1);
+          }
+        }
+        if (out.isNotEmpty) return out.toList();
+      }
+
+      // 2) if 'views' present (multi-detect backend), use image_index in views
+      if (comp.containsKey('views') && comp['views'] is List) {
+        for (final v in (comp['views'] as List)) {
+          if (v is Map && v.containsKey('image_index')) {
+            final idx = (v['image_index'] is num) ? (v['image_index'] as num).toInt() : null;
+            if (idx != null && idx >= 0 && idx < imagePaths.length) out.add(idx + 1);
+          }
+        }
+        if (out.isNotEmpty) return out.toList();
+      }
+
+      // 3) fallback: search per-image detections for matching bbox(s)
+      for (var i = 0; i < imagePaths.length; i++) {
+        final path = imagePaths[i];
+        final comps = _detectionsPerPath[path] ?? [];
+        for (final c in comps) {
+          final cbbox = (c['bbox'] is List) ? (c['bbox'] as List).map((e) => (e as num).toDouble()).toList() : <double>[];
+          final tbbox = (comp['bbox'] is List) ? (comp['bbox'] as List).map((e) => (e as num).toDouble()).toList() : <double>[];
+          if (_bboxEquals(cbbox, tbbox)) {
+            out.add(i + 1);
+          }
+          // also if comp has component_id and per-image entry has same component_id
+          if (comp.containsKey('id') && c.containsKey('component_id') && c['component_id'] == comp['id']) {
+            out.add(i + 1);
+          }
+        }
+      }
+    } catch (_) {}
+    return out.toList();
   }
 
   void _showZoomableImage(int initialIndex) {
@@ -450,6 +531,197 @@ class _ResultsPageState extends State<ResultsPage> {
     );
   }
 
+  /// GROUPING: compute average rgb signature for each raw detection and cluster by label+color
+  Future<void> _groupDetectionsAcrossImages() async {
+    _allComponents.clear();
+
+    for (final rd in _rawDetections) {
+      try {
+        rd.signature = await _computeCropAverageColor(rd.imagePath, rd.bbox, _imageSizesPerPath[rd.imagePath]);
+      } catch (e) {
+        debugPrint("[Grouping] signature error: $e");
+        rd.signature = null;
+      }
+    }
+
+    final double colorThreshold = 45.0;
+
+    final List<_Group> groups = [];
+    int gid = 1;
+    for (final rd in _rawDetections) {
+      bool attached = false;
+      for (final g in groups) {
+        if (g.type.toLowerCase() != rd.type.toLowerCase()) continue;
+        if (g.signature != null && rd.signature != null) {
+          final d = _colorDist(g.signature!, rd.signature!);
+          if (d <= colorThreshold) {
+            g.add(rd);
+            attached = true;
+            break;
+          }
+        } else {
+          if (_bboxCenterDistanceHeuristic(g.representative.bbox, rd.bbox) < 0.09) {
+            g.add(rd);
+            attached = true;
+            break;
+          }
+        }
+      }
+      if (!attached) {
+        final g = _Group(id: "g$gid", type: rd.type);
+        gid++;
+        g.add(rd);
+        groups.add(g);
+      }
+    }
+
+    for (final g in groups) {
+      final rep = g.representative;
+      final count = g.members.length;
+      final avgConf = g.members.map((m) => m.confidence).fold(0.0, (a, b) => a + b) / (count > 0 ? count : 1);
+      final grouped = {
+        "id": g.id,
+        "type": g.type,
+        "count": count,
+        "confidence": double.parse(avgConf.toStringAsFixed(3)),
+        "extra": rep.extra ?? {},
+        "members": g.members.map((m) {
+          return {
+            "imageIndex": m.imageIndex,
+            "path": m.imagePath,
+            "bbox": m.bbox,
+            "confidence": m.confidence,
+          };
+        }).toList(),
+      };
+      _allComponents.add(grouped);
+
+      for (final m in g.members) {
+        final list = _detectionsPerPath[m.imagePath] ?? [];
+        bool found = false;
+        for (var item in list) {
+          final itemBbox = (item["bbox"] as List?) ?? const [];
+          if (_bboxEquals(itemBbox, m.bbox)) {
+            item["component_id"] = g.id;
+            found = true;
+            break;
+          }
+        }
+        if (!found) {
+          _detectionsPerPath[m.imagePath] = list..add({
+            "type": m.type,
+            "bbox": m.bbox,
+            "confidence": m.confidence,
+            "extra": m.extra,
+            "component_id": g.id,
+          });
+        }
+      }
+    }
+  }
+
+  Future<List<int>?> _computeCropAverageColor(String imagePath, List<double> bbox, Size? originalSize) async {
+    try {
+      if (bbox.length != 4) return null;
+      final bytes = await File(imagePath).readAsBytes();
+      final uiImage = await _decodeUiImage(bytes);
+      final imgW = uiImage.width;
+      final imgH = uiImage.height;
+
+      double scaleX = 1.0, scaleY = 1.0;
+      if (originalSize != null && originalSize.width > 0 && originalSize.height > 0) {
+        scaleX = imgW / originalSize.width;
+        scaleY = imgH / originalSize.height;
+      }
+
+      final x1 = (bbox[0] * scaleX).clamp(0, imgW - 1).toInt();
+      final y1 = (bbox[1] * scaleY).clamp(0, imgH - 1).toInt();
+      final x2 = (bbox[2] * scaleX).clamp(0, imgW - 1).toInt();
+      final y2 = (bbox[3] * scaleY).clamp(0, imgH - 1).toInt();
+
+      if (x2 <= x1 || y2 <= y1) return null;
+
+      final width = x2 - x1;
+      final height = y2 - y1;
+
+      final stepX = (width / 20).ceil().clamp(1, 8);
+      final stepY = (height / 20).ceil().clamp(1, 8);
+
+      final bd = await uiImage.toByteData(format: ui.ImageByteFormat.rawRgba);
+      if (bd == null) return null;
+      final data = bd.buffer.asUint8List();
+
+      int rSum = 0, gSum = 0, bSum = 0, count = 0;
+
+      for (int yy = y1; yy < y2; yy += stepY) {
+        for (int xx = x1; xx < x2; xx += stepX) {
+          final idx = (yy * imgW + xx) * 4;
+          if (idx + 2 >= data.length) continue;
+          final r = data[idx];
+          final g = data[idx + 1];
+          final b = data[idx + 2];
+          rSum += r;
+          gSum += g;
+          bSum += b;
+          count++;
+        }
+      }
+
+      if (count == 0) return null;
+      final rAvg = (rSum / count).round();
+      final gAvg = (gSum / count).round();
+      final bAvg = (bSum / count).round();
+      return [rAvg, gAvg, bAvg];
+    } catch (e) {
+      debugPrint("[computeCropAvgColor] error: $e");
+      return null;
+    }
+  }
+
+  Future<ui.Image> _decodeUiImage(Uint8List data) {
+    final completer = Completer<ui.Image>();
+    ui.decodeImageFromList(data, (ui.Image img) => completer.complete(img));
+    return completer.future;
+  }
+
+  double _colorDist(List<int> a, List<int> b) {
+    final dr = (a[0] - b[0]).toDouble();
+    final dg = (a[1] - b[1]).toDouble();
+    final db = (a[2] - b[2]).toDouble();
+    return math.sqrt(dr * dr + dg * dg + db * db);
+  }
+
+  double _bboxCenterDistanceHeuristic(List? aRaw, List? bRaw) {
+    try {
+      if (aRaw == null || bRaw == null) return 1.0;
+      if (aRaw.length != 4 || bRaw.length != 4) return 1.0;
+      final a = aRaw.cast<num>().map((e) => e.toDouble()).toList();
+      final b = bRaw.cast<num>().map((e) => e.toDouble()).toList();
+      final ax = (a[0] + a[2]) / 2.0;
+      final ay = (a[1] + a[3]) / 2.0;
+      final bx = (b[0] + b[2]) / 2.0;
+      final by = (b[1] + b[3]) / 2.0;
+      final dx = (ax - bx).abs();
+      final dy = (ay - by).abs();
+      final denom = (((a[2] - a[0]).abs() + (b[2] - b[0]).abs()) / 2.0).abs() + 1.0;
+      final norm = ((dx + dy) / denom);
+      return norm;
+    } catch (_) {
+      return 1.0;
+    }
+  }
+
+  bool _bboxEquals(List? aRaw, List? bRaw) {
+    if (aRaw == null || bRaw == null) return false;
+    if (aRaw.length != 4 || bRaw.length != 4) return false;
+    for (int i = 0; i < 4; i++) {
+      final av = (aRaw[i] as num).toDouble();
+      final bv = (bRaw[i] as num).toDouble();
+      if ((av - bv).abs() > 2.0) return false;
+    }
+    return true;
+  }
+
   @override
   Widget build(BuildContext context) {
     Widget body;
@@ -519,8 +791,9 @@ class _ResultsPageState extends State<ResultsPage> {
               ...resistors.map((r) {
                 final val = r["extra"]?["value"] ?? "";
                 final conf = (r["confidence"] ?? 0.0).toString();
+                final source = _sourceLabelForComponent(r);
                 return Text(
-                  "• Resistor → ${val.toString().isEmpty ? "value N/A" : val}  (conf: $conf)",
+                  "• Resistor → ${val.toString().isEmpty ? "value N/A" : val}  (conf: $conf) — $source",
                 );
               }),
 
@@ -536,11 +809,12 @@ class _ResultsPageState extends State<ResultsPage> {
               ...ics.map((ic) {
                 final ocr = ic["extra"]?["ocr"] ?? "";
                 final conf = (ic["confidence"] ?? 0.0).toString();
+                final source = _sourceLabelForComponent(ic);
                 return Row(
                   children: [
                     Expanded(
                       child: Text(
-                        "• IC → ${ocr.toString().isEmpty ? "unreadable" : ocr}  (conf: $conf)",
+                        "• IC → ${ocr.toString().isEmpty ? "unreadable" : ocr}  (conf: $conf) — $source",
                       ),
                     ),
                     const SizedBox(width: 10),
@@ -570,7 +844,8 @@ class _ResultsPageState extends State<ResultsPage> {
               ...others.map((o) {
                 final t = o["type"];
                 final conf = (o["confidence"] ?? 0.0).toString();
-                return Text("• $t  (conf: $conf)");
+                final source = _sourceLabelForComponent(o);
+                return Text("• $t  (conf: $conf) — $source");
               }),
 
             const SizedBox(height: 28),
@@ -655,5 +930,46 @@ class _ResultsPageState extends State<ResultsPage> {
       ),
       body: body,
     );
+  }
+}
+
+/// Small internal helper class for raw detections:
+class _RawDetection {
+  final int imageIndex;
+  final String imagePath;
+  final List<double> bbox;
+  final String type;
+  final double confidence;
+  final Map<String, dynamic> extra;
+  List<int>? signature; // avg RGB sample
+  _RawDetection({
+    required this.imageIndex,
+    required this.imagePath,
+    required this.bbox,
+    required this.type,
+    required this.confidence,
+    required this.extra,
+  });
+}
+
+/// Group of raw detections representing same physical component
+class _Group {
+  final String id;
+  final String type;
+  final List<_RawDetection> members = [];
+  List<int>? signature;
+  _RawDetection get representative => members.first;
+
+  _Group({required this.id, required this.type});
+
+  void add(_RawDetection d) {
+    members.add(d);
+    final sigs = members.where((m) => m.signature != null).map((m) => m.signature!).toList();
+    if (sigs.isNotEmpty) {
+      final r = (sigs.map((s) => s[0]).reduce((a, b) => a + b) / sigs.length).round();
+      final g = (sigs.map((s) => s[1]).reduce((a, b) => a + b) / sigs.length).round();
+      final b = (sigs.map((s) => s[2]).reduce((a, b) => a + b) / sigs.length).round();
+      signature = [r, g, b];
+    }
   }
 }
