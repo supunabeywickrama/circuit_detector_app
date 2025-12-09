@@ -7,7 +7,8 @@ import 'package:http_parser/http_parser.dart' as http_parser;
 class ApiService {
   // Update this to your backend IP if needed
   static const String _baseUrl = "http://172.19.37.184:8000";
-
+ //192.168.137.1
+ //192.168.137.69
   /// Send a single image file to the /detect endpoint.
   /// [imagePath] - local filesystem path to the image.
   /// [conf] - optional confidence threshold (backend accepts `conf` form field).
