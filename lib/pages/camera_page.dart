@@ -27,6 +27,9 @@ class _CameraPageState extends State<CameraPage> with SingleTickerProviderStateM
   final List<XFile> _capturedImages = [];
   static const int maxImages = 5;
 
+  // keep quality for each captured file path
+  final Map<String, _ImageQualityResult> _qualityPerPath = {};
+
   late final AnimationController _pulseController;
 
   @override
@@ -65,6 +68,7 @@ class _CameraPageState extends State<CameraPage> with SingleTickerProviderStateM
 
       // Immediately open cropper for user to edit/crop before anything else.
       final croppedPath = await _cropImage(raw.path);
+
       // If user cancelled cropping, delete raw file and exit.
       if (croppedPath == null) {
         try {
@@ -78,6 +82,7 @@ class _CameraPageState extends State<CameraPage> with SingleTickerProviderStateM
       // Proceed with quality checks using the cropped image path.
       final quality = await _analyzeImageQuality(croppedPath);
 
+      // show quality dialog only when there is an issue (reasons not empty)
       if (!quality.passes) {
         final action = await _showQualityDialog(quality);
         if (action == _QualityAction.retake) {
@@ -89,19 +94,21 @@ class _CameraPageState extends State<CameraPage> with SingleTickerProviderStateM
           setState(() => _isBusy = false);
           return;
         } else if (action == _QualityAction.keep) {
-          await _addCapturedFile(XFile(croppedPath));
+          await _addCapturedFile(XFile(croppedPath), quality: quality);
         } else if (action == _QualityAction.acceptAndFinish) {
-          await _addCapturedFile(XFile(croppedPath));
+          await _addCapturedFile(XFile(croppedPath), quality: quality);
           _navigateToResults();
           setState(() => _isBusy = false);
           return;
         } else {
-          await _addCapturedFile(XFile(croppedPath));
+          // fallback: keep
+          await _addCapturedFile(XFile(croppedPath), quality: quality);
         }
       } else {
-        await _addCapturedFile(XFile(croppedPath));
+        await _addCapturedFile(XFile(croppedPath), quality: quality);
       }
 
+      // After adding, propose take another angle (but let user choose)
       if (_capturedImages.length < maxImages) {
         final takeAnother = await _askForAnotherAngleAuto();
         if (!takeAnother) _navigateToResults();
@@ -110,7 +117,7 @@ class _CameraPageState extends State<CameraPage> with SingleTickerProviderStateM
       }
     } catch (e) {
       debugPrint("Capture failed: $e");
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Capture failed.")));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Capture failed.")));
     } finally {
       if (mounted) setState(() => _isBusy = false);
     }
@@ -151,11 +158,14 @@ class _CameraPageState extends State<CameraPage> with SingleTickerProviderStateM
     }
   }
 
-  Future<void> _addCapturedFile(XFile file) async {
+  Future<void> _addCapturedFile(XFile file, {required _ImageQualityResult quality}) async {
     setState(() {
       _capturedImages.add(file);
+      _qualityPerPath[file.path] = quality;
     });
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Captured (#${_capturedImages.length})"), duration: const Duration(milliseconds: 900)));
+
+    final label = quality.passes ? "Saved" : "Saved (quality: ${quality.reasons.join(', ')})";
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("$label (#${_capturedImages.length})"), duration: const Duration(milliseconds: 900)));
   }
 
   Future<void> _replaceCapturedFile(int index) async {
@@ -184,17 +194,29 @@ class _CameraPageState extends State<CameraPage> with SingleTickerProviderStateM
           setState(() => _isBusy = false);
           return;
         } else if (action == _QualityAction.keep) {
-          setState(() => _capturedImages[index] = XFile(croppedPath));
+          setState(() {
+            _capturedImages[index] = XFile(croppedPath);
+            _qualityPerPath[croppedPath] = quality;
+          });
         } else if (action == _QualityAction.acceptAndFinish) {
-          setState(() => _capturedImages[index] = XFile(croppedPath));
+          setState(() {
+            _capturedImages[index] = XFile(croppedPath);
+            _qualityPerPath[croppedPath] = quality;
+          });
           _navigateToResults();
           setState(() => _isBusy = false);
           return;
         } else {
-          setState(() => _capturedImages[index] = XFile(croppedPath));
+          setState(() {
+            _capturedImages[index] = XFile(croppedPath);
+            _qualityPerPath[croppedPath] = quality;
+          });
         }
       } else {
-        setState(() => _capturedImages[index] = XFile(croppedPath));
+        setState(() {
+          _capturedImages[index] = XFile(croppedPath);
+          _qualityPerPath[croppedPath] = quality;
+        });
       }
     } catch (e) {
       debugPrint("Replace capture failed: $e");
@@ -239,6 +261,8 @@ class _CameraPageState extends State<CameraPage> with SingleTickerProviderStateM
     int ptr = 0;
     for (int y = 0; y < h; y++) {
       for (int x = 0; x < w; x++) {
+        // Guard against out-of-range though getBytes usually has enough data
+        if (ptr + 2 >= bytes.length) break;
         final int r = bytes[ptr];
         final int g = bytes[ptr + 1];
         final int b = bytes[ptr + 2];
@@ -277,11 +301,14 @@ class _CameraPageState extends State<CameraPage> with SingleTickerProviderStateM
     }
     final double variance = varSum / validPixels;
 
-    // heuristics
-    final double blurVarianceThreshold = 200.0;
+    // heuristics (tuned defaults)
+    // Lower threshold -> more shots considered "blurry" (we want to flag true blurs)
+    final double blurVarianceThreshold = 120.0; // tuned value, adjust as needed
     final bool isBlurry = variance < blurVarianceThreshold;
-    final bool tooDark = meanL < 40.0;
-    final bool tooBright = meanL > 230.0;
+
+    // brightness thresholds
+    final bool tooDark = meanL < 45.0;
+    final bool tooBright = meanL > 240.0;
 
     final reasons = <String>[];
     if (isBlurry) reasons.add("blurry (low high-frequency content)");
@@ -301,6 +328,7 @@ class _CameraPageState extends State<CameraPage> with SingleTickerProviderStateM
     }
     msg.writeln("");
     msg.writeln("Variance: ${q.variance?.toStringAsFixed(1)}, Mean brightness: ${q.meanLuminance?.toStringAsFixed(1)}");
+
     return showDialog<_QualityAction>(
       context: context,
       builder: (_) => AlertDialog(
@@ -381,7 +409,12 @@ class _CameraPageState extends State<CameraPage> with SingleTickerProviderStateM
     } else if (res == 'edit') {
       final newPath = await _cropImage(path);
       if (newPath != null) {
-        setState(() => _capturedImages[index] = XFile(newPath));
+        final q = await _analyzeImageQuality(newPath);
+        setState(() {
+          _capturedImages[index] = XFile(newPath);
+          _qualityPerPath.remove(path);
+          _qualityPerPath[newPath] = q;
+        });
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Edited shot saved"), duration: Duration(milliseconds: 900)));
       }
     } else if (res == 'replace') {
@@ -409,8 +442,11 @@ class _CameraPageState extends State<CameraPage> with SingleTickerProviderStateM
     final XFile orig = _capturedImages[index];
     final newPath = await _cropImage(orig.path);
     if (newPath == null) return;
+    final q = await _analyzeImageQuality(newPath);
     setState(() {
       _capturedImages[index] = XFile(newPath);
+      _qualityPerPath.remove(orig.path);
+      _qualityPerPath[newPath] = q;
     });
   }
 
@@ -419,6 +455,7 @@ class _CameraPageState extends State<CameraPage> with SingleTickerProviderStateM
     try {
       if (f.existsSync()) f.deleteSync();
     } catch (_) {}
+    _qualityPerPath.remove(_capturedImages[index].path);
     setState(() => _capturedImages.removeAt(index));
   }
 
@@ -512,6 +549,8 @@ class _CameraPageState extends State<CameraPage> with SingleTickerProviderStateM
                                 separatorBuilder: (_, __) => const SizedBox(width: 8),
                                 itemBuilder: (context, i) {
                                   final file = File(_capturedImages[i].path);
+                                  final quality = _qualityPerPath[_capturedImages[i].path];
+                                  final bool flagged = quality != null && !quality.passes;
                                   return GestureDetector(
                                     onTap: () => _openThumbnailActions(i),
                                     child: Container(
@@ -522,7 +561,20 @@ class _CameraPageState extends State<CameraPage> with SingleTickerProviderStateM
                                         children: [
                                           ClipRRect(borderRadius: BorderRadius.circular(10), child: Image.file(file, width: 100, height: 100, fit: BoxFit.cover)),
                                           Positioned(left: 6, top: 6, child: Container(padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2), decoration: BoxDecoration(color: Colors.black45, borderRadius: BorderRadius.circular(6)), child: Text("#${i + 1}", style: const TextStyle(color: Colors.white, fontSize: 12)))),
-                                          Positioned(right: 6, bottom: 6, child: GestureDetector(onTap: () => _removeCapturedAt(i), child: Container(padding: const EdgeInsets.all(6), decoration: BoxDecoration(color: Colors.redAccent, shape: BoxShape.circle), child: const Icon(Icons.delete, size: 16, color: Colors.white)))),
+                                          if (flagged)
+                                            Positioned(
+                                              right: 6,
+                                              top: 6,
+                                              child: Tooltip(
+                                                message: quality!.reasons.join(", "),
+                                                child: Container(padding: const EdgeInsets.all(6), decoration: BoxDecoration(color: Colors.orangeAccent, shape: BoxShape.circle), child: const Icon(Icons.warning_amber_rounded, size: 16, color: Colors.black)),
+                                              ),
+                                            ),
+                                          Positioned(
+                                            right: 6,
+                                            bottom: 6,
+                                            child: GestureDetector(onTap: () => _removeCapturedAt(i), child: Container(padding: const EdgeInsets.all(6), decoration: BoxDecoration(color: Colors.redAccent, shape: BoxShape.circle), child: const Icon(Icons.delete, size: 16, color: Colors.white))),
+                                          ),
                                         ],
                                       ),
                                     ),
@@ -613,6 +665,7 @@ class _CameraPageState extends State<CameraPage> with SingleTickerProviderStateM
         if (fi.existsSync()) fi.deleteSync();
       } catch (_) {}
     }
+    _qualityPerPath.clear();
     setState(() => _capturedImages.clear());
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Reset captures")));
   }

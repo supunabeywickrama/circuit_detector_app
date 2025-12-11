@@ -80,7 +80,7 @@ class _ResultsPageState extends State<ResultsPage> {
         await _runSingleDetections();
       }
 
-      // If we have per-image detections (no aggregated components) -> build raw list and group
+      // Build raw detections if not populated by multi endpoint
       if (_rawDetections.isEmpty) {
         int idx = 0;
         for (final path in imagePaths) {
@@ -100,9 +100,11 @@ class _ResultsPageState extends State<ResultsPage> {
         }
       }
 
+      // Group across images if multiple images exist and raw detections exist
       if (_rawDetections.isNotEmpty && imagePaths.length > 1) {
         await _groupDetectionsAcrossImages();
       } else {
+        // No grouping needed: flatten per-path comps to _allComponents
         if (_allComponents.isEmpty) {
           for (final list in _detectionsPerPath.values) {
             _allComponents.addAll(list);
@@ -126,7 +128,7 @@ class _ResultsPageState extends State<ResultsPage> {
     }
   }
 
-  /// Run single-image detection for each image (original behavior).
+  /// Run single-image detection for each image (defensive).
   Future<void> _runSingleDetections() async {
     _detectionsPerPath.clear();
     _allComponents.clear();
@@ -134,7 +136,19 @@ class _ResultsPageState extends State<ResultsPage> {
     _rawDetections.clear();
 
     for (final path in imagePaths) {
-      final json = await ApiService.detectSingle(path);
+      dynamic json;
+      try {
+        json = await ApiService.detectSingle(path);
+      } catch (e) {
+        throw Exception("Failed to detect for $path: $e");
+      }
+
+      if (json == null || json is! Map<String, dynamic>) {
+        // Defensive: continue but ensure mapping exists
+        debugPrint("[ResultsPage] unexpected response for $path: $json");
+        _detectionsPerPath[path] = [];
+        continue;
+      }
 
       final blurred = json["blurred"] == true;
       if (blurred) _anyBlurred = true;
@@ -154,30 +168,39 @@ class _ResultsPageState extends State<ResultsPage> {
       List<Map<String, dynamic>> comps = [];
 
       if (detectionsRaw is List) {
-        comps = detectionsRaw.map<Map<String, dynamic>>((e) {
-          final raw = Map<String, dynamic>.from(e as Map);
+        try {
+          comps = detectionsRaw.map<Map<String, dynamic>>((e) {
+            final raw = Map<String, dynamic>.from(e as Map);
 
-          final label = (raw["label"] ?? "").toString();
-          final conf = (raw["confidence"] ?? 0.0) as num;
+            final label = (raw["label"] ?? "").toString();
+            final conf = (raw["confidence"] ?? 0.0) as num;
 
-          final bboxRaw = raw["bbox"];
-          List<double> bbox;
-          if (bboxRaw is List) {
-            bbox = bboxRaw.map((v) => (v as num).toDouble()).toList(); // [x1,y1,x2,y2]
-          } else {
-            bbox = const <double>[];
-          }
+            final bboxRaw = raw["bbox"];
+            List<double> bbox;
+            if (bboxRaw is List) {
+              bbox = bboxRaw.map((v) => (v as num).toDouble()).toList(); // [x1,y1,x2,y2]
+            } else {
+              bbox = const <double>[];
+            }
 
-          final extraRaw = raw["extra"];
-          final extra = (extraRaw is Map) ? Map<String, dynamic>.from(extraRaw as Map) : <String, dynamic>{};
+            final extraRaw = raw["extra"];
+            final extra = (extraRaw is Map) ? Map<String, dynamic>.from(extraRaw as Map) : <String, dynamic>{};
 
-          return {
-            "type": label,
-            "bbox": bbox,
-            "confidence": conf.toDouble(),
-            "extra": extra,
-          };
-        }).toList();
+            return {
+              "type": label,
+              "bbox": bbox,
+              "confidence": conf.toDouble(),
+              "extra": extra,
+            };
+          }).toList();
+        } catch (e) {
+          debugPrint("[ResultsPage] parse detections failed for $path: $e");
+          comps = [];
+        }
+      } else {
+        // no detections key or not list -> treat as empty
+        debugPrint("[ResultsPage] missing/invalid detections for $path");
+        comps = [];
       }
 
       _detectionsPerPath[path] = comps;
@@ -202,18 +225,19 @@ class _ResultsPageState extends State<ResultsPage> {
       rethrow;
     }
 
-    if (json == null || json is! Map<String, dynamic>) {
-      debugPrint("[ResultsPage] detectMulti returned null/unexpected, falling back to single calls");
+    if (json == null) {
+      debugPrint("[ResultsPage] detectMulti returned null, falling back");
       await _runSingleDetections();
       return;
     }
 
-    final Map<String, dynamic> mapJson = json as Map<String, dynamic>;
-
-    if (mapJson.containsKey("components") && mapJson["components"] is List) {
+    // Case A: backend returned aggregated map with "components"
+    if (json is Map<String, dynamic> && json.containsKey("components") && json["components"] is List) {
+      final mapJson = json as Map<String, dynamic>;
       final compsRaw = (mapJson["components"] as List).cast<Map>();
       final comps = compsRaw.map((m) => Map<String, dynamic>.from(m)).toList();
 
+      // optional: read image sizes array
       if (mapJson.containsKey("images") && mapJson["images"] is List) {
         final imgs = (mapJson["images"] as List).cast<Map>();
         for (var i = 0; i < imgs.length && i < imagePaths.length; i++) {
@@ -226,6 +250,7 @@ class _ResultsPageState extends State<ResultsPage> {
         }
       }
 
+      // Each component includes 'views' which map to image_index + bbox
       for (final comp in comps) {
         final type = (comp["type"] ?? comp["label"] ?? "unknown").toString();
         final extra = (comp["extra"] is Map) ? Map<String, dynamic>.from(comp["extra"]) : <String, dynamic>{};
@@ -248,6 +273,7 @@ class _ResultsPageState extends State<ResultsPage> {
           }
         }
 
+        // Add to aggregated components list
         _allComponents.add({
           "id": id,
           "type": type,
@@ -256,6 +282,7 @@ class _ResultsPageState extends State<ResultsPage> {
           "views": views,
         });
 
+        // Populate per-image detections
         for (final view in views) {
           final idx = view["image_index"] as int?;
           final bbox = (view["bbox"] as List?) ?? const <double>[];
@@ -271,10 +298,70 @@ class _ResultsPageState extends State<ResultsPage> {
           _detectionsPerPath[path] = (_detectionsPerPath[path] ?? [])..add(entry);
         }
       }
-    } else {
-      debugPrint("[ResultsPage] detectMulti returned no components key; attempting per-image fallback");
-      await _runSingleDetections();
+      return;
     }
+
+    // Case B: backend returned a List of per-image single-detect responses (fallback style)
+    if (json is List) {
+      final list = json.cast<dynamic>();
+      // If list length >= images, map each item to a path
+      final n = math.min(list.length, imagePaths.length);
+      for (var i = 0; i < n; i++) {
+        final item = list[i];
+        final path = imagePaths[i];
+        if (item == null || item is! Map<String, dynamic>) {
+          _detectionsPerPath[path] = [];
+          continue;
+        }
+
+        // blurred
+        final blurred = item["blurred"] == true;
+        if (blurred) _anyBlurred = true;
+
+        // sizes
+        final imgInfo = item["image"];
+        if (imgInfo is Map) {
+          final w = (imgInfo["width"] as num?)?.toDouble();
+          final h = (imgInfo["height"] as num?)?.toDouble();
+          if (w != null && h != null && w > 0 && h > 0) {
+            _imageSizesPerPath[path] = Size(w, h);
+          }
+        }
+
+        // detections
+        final detectionsRaw = item["detections"];
+        List<Map<String, dynamic>> comps = [];
+        if (detectionsRaw is List) {
+          try {
+            comps = detectionsRaw.map<Map<String, dynamic>>((e) {
+              final raw = Map<String, dynamic>.from(e as Map);
+              final label = (raw["label"] ?? "").toString();
+              final conf = (raw["confidence"] ?? 0.0) as num;
+              final bboxRaw = raw["bbox"];
+              List<double> bbox;
+              if (bboxRaw is List) {
+                bbox = bboxRaw.map((v) => (v as num).toDouble()).toList();
+              } else {
+                bbox = const <double>[];
+              }
+              final extraRaw = raw["extra"];
+              final extra = (extraRaw is Map) ? Map<String, dynamic>.from(extraRaw as Map) : <String, dynamic>{};
+              return {"type": label, "bbox": bbox, "confidence": conf.toDouble(), "extra": extra};
+            }).toList();
+          } catch (e) {
+            debugPrint("[ResultsPage] parse per-image item failed: $e");
+            comps = [];
+          }
+        }
+        _detectionsPerPath[path] = comps;
+      }
+      // If list longer than images, ignore extras
+      return;
+    }
+
+    // Unknown format -> fall back to single detection per image
+    debugPrint("[ResultsPage] detectMulti returned unexpected format, falling back");
+    await _runSingleDetections();
   }
 
   /// Save the current detection summary to local history via HistoryStorage.
