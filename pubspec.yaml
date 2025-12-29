@@ -25,7 +25,8 @@ dependencies:
   provider: ^6.1.5
   image_cropper: ^11.0.0
   #image: ^4.5.4
-
+  tflite_flutter: ^0.9.1
+  tflite_flutter_helper: ^0.3.0
   camera: any
   image: any
   path_provider: any
@@ -47,4 +48,5 @@ flutter:
   assets:
     - assets/images/home_page_bg.webp
     - assets/images/circuit_placeholder.png
-  
+    - assets/models/best_float32.tflite
+    - assets/models/labels.txt
