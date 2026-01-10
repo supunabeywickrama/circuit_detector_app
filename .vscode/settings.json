@@ -1,6 +1,5 @@
 {
     "cmake.sourceDirectory": "D:/FLUTER/mobile app/circuit_detector_app/linux",
-    "python-envs.defaultEnvManager": "ms-python.python:conda",
     "python-envs.defaultPackageManager": "ms-python.python:conda",
     "python-envs.pythonProjects": []
 }

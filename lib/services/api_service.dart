@@ -1,17 +1,15 @@
 // lib/services/api_service.dart
-import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:async';
 import 'dart:math' as math;
-
-import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart' as http_parser;
 
 /// API client that tries several candidate hosts (useful for real phone vs emulator).
 class ApiService {
   // PRIMARY: your laptop where uvicorn runs (you provided this IP)
-  static const String _primaryBase = "http://192.168.8.123:8000";
+  static const String _primaryBase = "http://172.19.37.184:8000";
 
   // Candidate hosts tried in order. Primary first, then emulator loopbacks, then localhost.
   static final List<String> _candidateBaseUrls = [
@@ -48,7 +46,7 @@ class ApiService {
       } on Exception catch (e) {
         lastEx = e;
         // log and try next host
-        debugPrint("[ApiService] POST $uri failed: $e");
+        print("[ApiService] POST $uri failed: $e");
         // short delay to avoid spamming network
         await Future.delayed(const Duration(milliseconds: 250));
         continue;
@@ -89,8 +87,8 @@ class ApiService {
           "Network error while uploading $imagePath: $e\nTried hosts: $tried\nEnsure your phone and laptop are on the same Wi-Fi and uvicorn was started with --host 0.0.0.0.");
     }
 
-    debugPrint("DETECT status: ${resp.statusCode}");
-    debugPrint("DETECT body: ${resp.body}");
+    print("DETECT status: ${resp.statusCode}");
+    print("DETECT body: ${resp.body}");
 
     if (resp.statusCode != 200) {
       throw Exception("Backend error ${resp.statusCode}: ${resp.body}");
@@ -141,7 +139,7 @@ class ApiService {
         return decoded;
       }
     } catch (e) {
-      debugPrint("[ApiService] /detect_multi failed: $e");
+      print("[ApiService] /detect_multi failed: $e");
       // fall-through to per-file uploads
     }
 
@@ -173,7 +171,7 @@ class ApiService {
     await Future.wait(active);
 
     if (errors.isNotEmpty) {
-      debugPrint("ApiService.detectMulti errors:\n${errors.join('\n')}");
+      print("ApiService.detectMulti errors:\n${errors.join('\n')}");
     }
 
     return results;
@@ -206,3 +204,5 @@ class ApiService {
     return decoded;
   }
 }
+
+// You may need math import used above:

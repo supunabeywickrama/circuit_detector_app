@@ -1,0 +1,23 @@
+Resistor
+Resistor SMD
+Capacitor_Electrolytic
+Capacitor_Ceramic
+IC
+Chip
+Transistor
+Diode (through-hole)
+Diode_SMD
+Zener Diode
+LED
+Voltage_Regulator
+Inductor
+Connector
+Relay
+Switch_Button
+Fuse
+Display
+Busser
+Transformer
+Clock
+Variable_Resistor
+

@@ -16,7 +16,7 @@ dependencies:
   image_picker: ^1.0.7
   path: ^1.8.3
   mime: ^1.0.4
-  #camera: ^0.10.5+9
+  camera: ^0.10.5+9
   #path_provider: ^2.1.2
   photo_view: ^0.14.0
   
@@ -25,9 +25,9 @@ dependencies:
   provider: ^6.1.5
   image_cropper: ^11.0.0
   #image: ^4.5.4
-  tflite_flutter: ^0.9.1
-  tflite_flutter_helper: ^0.3.0
-  camera: any
+  #tflite_flutter: ^0.9.1
+  #tflite_flutter_helper: ^0.3.0
+  #camera: any
   image: any
   path_provider: any
 
