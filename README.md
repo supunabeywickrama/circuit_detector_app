@@ -1,3 +1,11 @@
+
+<img width="1080" height="2400" alt="Screenshot_1772902800" src="https://github.com/user-attachments/assets/9d65fcf8-a073-4e34-9af8-d508baf8353c" />
+
+<img width="1080" height="2400" alt="Screenshot_1772901812" src="https://github.com/user-attachments/assets/c49fb561-bb7d-4839-997b-8c1d0714f39c" />
+
+<img width="1080" height="2400" alt="Screenshot_1772901816" src="https://github.com/user-attachments/assets/f1bf5f19-ddd7-409b-8f5b-0aaf701eb0d9" />
+
+
 <img width="2400" height="1350" alt="AIBased-Electronic-Circuit-Component-Detection-Mobile-App" src="https://github.com/user-attachments/assets/ecbea31a-c166-4114-a5b7-0387d029990b" />
 
 <img width="2400" height="1350" alt="Title-and-Credits (2)" src="https://github.com/user-attachments/assets/82de977e-4221-4e85-8c39-4f8be3b08165" />
