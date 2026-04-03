@@ -27,6 +27,11 @@ class _ResultsPageState extends State<ResultsPage> {
   bool _loading = true;
   String? _error;
 
+  // ── Rejection state ──────────────────────────────────────────────────────
+  bool _isRejected = false;
+  String _rejectionType = ''; // 'blurry' | 'not_circuit'
+  String _rejectionReason = '';
+
   bool _anyBlurred = false;
 
   /// All detections merged (for text summary). After grouping this becomes grouped components.
@@ -52,6 +57,9 @@ class _ResultsPageState extends State<ResultsPage> {
     setState(() {
       _loading = true;
       _error = null;
+      _isRejected = false;
+      _rejectionType = '';
+      _rejectionReason = '';
       _anyBlurred = false;
       _allComponents.clear();
       _detectionsPerPath.clear();
@@ -63,7 +71,7 @@ class _ResultsPageState extends State<ResultsPage> {
       if (imagePaths.isEmpty) {
         setState(() {
           _loading = false;
-          _error = "No image to process.";
+          _error = 'No image to process.';
         });
         return;
       }
@@ -73,12 +81,15 @@ class _ResultsPageState extends State<ResultsPage> {
         try {
           await _runMultiDetectionWithFallback();
         } catch (e) {
-          debugPrint("[ResultsPage] multi detection failed -> falling back: $e");
+          debugPrint('[ResultsPage] multi detection failed -> falling back: $e');
           await _runSingleDetections();
         }
       } else {
         await _runSingleDetections();
       }
+
+      // If rejected, stop here — UI already updated inside _runSingleDetections
+      if (_isRejected) return;
 
       // Build raw detections if not populated by multi endpoint
       if (_rawDetections.isEmpty) {
@@ -86,14 +97,18 @@ class _ResultsPageState extends State<ResultsPage> {
         for (final path in imagePaths) {
           final comps = _detectionsPerPath[path] ?? [];
           for (final c in comps) {
-            final bbox = (c['bbox'] is List) ? (c['bbox'] as List).map((e) => (e as num).toDouble()).toList() : <double>[];
+            final bbox = (c['bbox'] is List)
+                ? (c['bbox'] as List).map((e) => (e as num).toDouble()).toList()
+                : <double>[];
             _rawDetections.add(_RawDetection(
               imageIndex: idx,
               imagePath: path,
               bbox: bbox,
               type: (c['type'] ?? 'unknown').toString(),
               confidence: (c['confidence'] is num) ? (c['confidence'] as num).toDouble() : 0.0,
-              extra: (c['extra'] is Map) ? Map<String, dynamic>.from(c['extra'] as Map) : <String, dynamic>{},
+              extra: (c['extra'] is Map)
+                  ? Map<String, dynamic>.from(c['extra'] as Map)
+                  : <String, dynamic>{},
             ));
           }
           idx++;
@@ -104,7 +119,6 @@ class _ResultsPageState extends State<ResultsPage> {
       if (_rawDetections.isNotEmpty && imagePaths.length > 1) {
         await _groupDetectionsAcrossImages();
       } else {
-        // No grouping needed: flatten per-path comps to _allComponents
         if (_allComponents.isEmpty) {
           for (final list in _detectionsPerPath.values) {
             _allComponents.addAll(list);
@@ -112,11 +126,9 @@ class _ResultsPageState extends State<ResultsPage> {
         }
       }
 
-      debugPrint("Total detections across images (after grouping): ${_allComponents.length}");
+      debugPrint('Total detections across images (after grouping): ${_allComponents.length}');
 
-      setState(() {
-        _loading = false;
-      });
+      setState(() { _loading = false; });
 
       // Save detection to history (non-blocking)
       _saveCurrentDetectionToHistory();
@@ -140,31 +152,45 @@ class _ResultsPageState extends State<ResultsPage> {
       try {
         json = await ApiService.detectSingle(path);
       } catch (e) {
-        throw Exception("Failed to detect for $path: $e");
+        throw Exception('Failed to detect for $path: $e');
       }
 
       if (json == null || json is! Map<String, dynamic>) {
-        // Defensive: continue but ensure mapping exists
-        debugPrint("[ResultsPage] unexpected response for $path: $json");
+        debugPrint('[ResultsPage] unexpected response for $path: $json');
         _detectionsPerPath[path] = [];
         continue;
       }
 
-      final blurred = json["blurred"] == true;
+      // ── Handle backend rejection ─────────────────────────────────────────
+      if (json['rejected'] == true) {
+        setState(() {
+          _loading = false;
+          _isRejected = true;
+          _rejectionType = (json['rejection_type'] ?? '').toString();
+          _rejectionReason = (json['reason'] ?? 'Image was rejected by the server.').toString();
+        });
+        return;
+      }
+
+      final blurred = json['blurred'] == true;
       if (blurred) _anyBlurred = true;
 
-      // ---- image size ----
-      final imgInfo = json["image"];
+      // Read blur variance if provided
+      final bv = json['blur_variance'];
+      if (bv is num) _anyBlurred = _anyBlurred || bv.toDouble() < 90.0;
+
+      // ── Image size ───────────────────────────────────────────────────────
+      final imgInfo = json['image'];
       if (imgInfo is Map) {
-        final w = (imgInfo["width"] as num?)?.toDouble();
-        final h = (imgInfo["height"] as num?)?.toDouble();
+        final w = (imgInfo['width'] as num?)?.toDouble();
+        final h = (imgInfo['height'] as num?)?.toDouble();
         if (w != null && h != null && w > 0 && h > 0) {
           _imageSizesPerPath[path] = Size(w, h);
         }
       }
 
-      // ---- detections ----
-      final detectionsRaw = json["detections"];
+      // ── Detections ───────────────────────────────────────────────────────
+      final detectionsRaw = json['detections'];
       List<Map<String, dynamic>> comps = [];
 
       if (detectionsRaw is List) {
@@ -809,37 +835,148 @@ class _ResultsPageState extends State<ResultsPage> {
     return true;
   }
 
+  // ── Rejection card widget ────────────────────────────────────────────────
+  Widget _buildRejectionView() {
+    final isBlurry = _rejectionType == 'blurry';
+    final icon = isBlurry ? Icons.blur_on : Icons.no_photography_rounded;
+    final color = isBlurry ? Colors.orange.shade700 : Colors.red.shade600;
+    final title = isBlurry ? '📸 Image Too Blurry' : '🚫 Not a Circuit Board';
+
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(28),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: color, width: 2),
+              ),
+              child: Column(
+                children: [
+                  Icon(icon, size: 64, color: color),
+                  const SizedBox(height: 16),
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: color,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    _rejectionReason,
+                    style: const TextStyle(fontSize: 14, height: 1.5),
+                    textAlign: TextAlign.center,
+                  ),
+                  if (isBlurry) ...[
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Tips for a sharp photo:\n'
+                      '• Hold your phone still\n'
+                      '• Use good, even lighting\n'
+                      '• Avoid reflections on the PCB\n'
+                      '• Tap the screen to focus before shooting',
+                      style: TextStyle(fontSize: 13, color: Colors.grey),
+                    ),
+                  ] else ...[
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Tips:\n'
+                      '• Ensure the circuit board fills most of the frame\n'
+                      '• Crop out non-board areas before uploading\n'
+                      '• Use the camera page for best results',
+                      style: TextStyle(fontSize: 13, color: Colors.grey),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(height: 24),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.arrow_back),
+                  label: const Text('Go Back'),
+                ),
+                ElevatedButton.icon(
+                  onPressed: _runDetections,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Retry'),
+                  style: ElevatedButton.styleFrom(backgroundColor: color),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     Widget body;
 
     if (_loading) {
-      body = const Center(child: CircularProgressIndicator());
+      body = Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const CircularProgressIndicator(),
+          const SizedBox(height: 20),
+          Text(
+            'Analysing your circuit...\nThis may take a few seconds.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.grey.shade600, fontSize: 14),
+          ),
+        ],
+      );
+    } else if (_isRejected) {
+      body = _buildRejectionView();
     } else if (_error != null) {
       body = Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.error, color: Colors.red, size: 40),
-            const SizedBox(height: 8),
-            Text(
-              "Failed to detect:\n$_error",
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 8),
-            ElevatedButton(
-              onPressed: _runDetections,
-              child: const Text("Retry"),
-            ),
-          ],
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.error_outline, color: Colors.red, size: 48),
+              const SizedBox(height: 12),
+              Text(
+                'Detection failed:\n$_error',
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 14),
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton.icon(
+                onPressed: _runDetections,
+                icon: const Icon(Icons.refresh),
+                label: const Text('Retry'),
+              ),
+            ],
+          ),
         ),
       );
     } else {
-      final resistors = _byType("resistor");
-      final ics = _allComponents.where((c) => (c["type"] as String? ?? "").toLowerCase() == "ic").toList();
+      final resistors = _byType('resistor');
+      final ics = _allComponents
+          .where((c) => (c['type'] as String? ?? '').toLowerCase() == 'ic')
+          .toList();
+      final chips = _allComponents
+          .where((c) => (c['type'] as String? ?? '').toLowerCase() == 'chip')
+          .toList();
+      final voltageRegs = _allComponents
+          .where((c) => (c['type'] as String? ?? '').toLowerCase() == 'voltage_regulator')
+          .toList();
       final others = _allComponents.where((c) {
-        final t = (c["type"] as String? ?? "").toLowerCase();
-        return !(t.startsWith("resistor") || t == "ic");
+        final t = (c['type'] as String? ?? '').toLowerCase();
+        return !(t.startsWith('resistor') || t == 'ic' || t == 'chip' || t == 'voltage_regulator');
       }).toList();
 
       body = SingleChildScrollView(
@@ -848,91 +985,139 @@ class _ResultsPageState extends State<ResultsPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              "Total detections: ${_allComponents.length}",
+              'Total detections: ${_allComponents.length}',
               style: const TextStyle(fontSize: 12, color: Colors.grey),
             ),
             const SizedBox(height: 8),
 
+            // ── Blur warning banner ────────────────────────────────────────
             if (_anyBlurred)
               Container(
                 margin: const EdgeInsets.only(bottom: 14),
-                padding: const EdgeInsets.all(10),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                 decoration: BoxDecoration(
                   color: Colors.amber.shade700,
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(10),
                 ),
-                child: const Text(
-                  "⚠ Some images look blurry. You may want to retake for better accuracy.",
-                  style: TextStyle(color: Colors.white),
-                ),
-              ),
-
-            const Text(
-              "🟡 Resistors:",
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            if (resistors.isEmpty)
-              const Text("• none")
-            else
-              ...resistors.map((r) {
-                final val = r["extra"]?["value"] ?? "";
-                final conf = (r["confidence"] ?? 0.0).toString();
-                final source = _sourceLabelForComponent(r);
-                return Text(
-                  "• Resistor → ${val.toString().isEmpty ? "value N/A" : val}  (conf: $conf) — $source",
-                );
-              }),
-
-            const SizedBox(height: 22),
-            const Text(
-              "🔵 ICs:",
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            if (ics.isEmpty)
-              const Text("• none")
-            else
-              ...ics.map((ic) {
-                final ocr = ic["extra"]?["ocr"] ?? "";
-                final conf = (ic["confidence"] ?? 0.0).toString();
-                final source = _sourceLabelForComponent(ic);
-                return Row(
+                child: Row(
                   children: [
-                    Expanded(
-                      child: Text(
-                        "• IC → ${ocr.toString().isEmpty ? "unreadable" : ocr}  (conf: $conf) — $source",
-                      ),
-                    ),
+                    const Icon(Icons.blur_on, color: Colors.white),
                     const SizedBox(width: 10),
-                    SizedBox(
-                      width: 180,
-                      child: TextField(
-                        decoration: const InputDecoration(
-                          hintText: 'Enter IC manually',
-                          border: OutlineInputBorder(),
-                          contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                        ),
+                    const Expanded(
+                      child: Text(
+                        '⚠ Some images appear blurry. Results may be less accurate.',
+                        style: TextStyle(color: Colors.white, fontSize: 13),
                       ),
                     ),
                   ],
+                ),
+              ),
+
+            // ── Resistors ──────────────────────────────────────────────────
+            const Text('🟡 Resistors:',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            if (resistors.isEmpty)
+              const Text('• none')
+            else
+              ...resistors.map((r) {
+                final val = (r['extra']?['value'] ?? '').toString();
+                final conf = ((r['confidence'] ?? 0.0) as num).toStringAsFixed(4);
+                final source = _sourceLabelForComponent(r);
+                final bands = r['extra']?['bands'];
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('• Resistor → ${val.isEmpty ? "value N/A" : val}  (conf: $conf) — $source'),
+                      if (bands is List && bands.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(left: 12, top: 2),
+                          child: Text(
+                            'Bands: ${bands.join(" | ")}',
+                            style: const TextStyle(fontSize: 12, color: Colors.grey),
+                          ),
+                        ),
+                    ],
+                  ),
                 );
               }),
 
+            // ── ICs ────────────────────────────────────────────────────────
             const SizedBox(height: 22),
-            const Text(
-              "🧩 Others:",
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
+            const Text('🔵 ICs:',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            if (ics.isEmpty)
+              const Text('• none')
+            else
+              ...ics.map((ic) {
+                final ocr = (ic['extra']?['ocr'] ?? '').toString();
+                final conf = ((ic['confidence'] ?? 0.0) as num).toStringAsFixed(4);
+                final source = _sourceLabelForComponent(ic);
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Text(
+                    '• IC → ${ocr.isEmpty || ocr == "unreadable" ? "unreadable" : ocr}  (conf: $conf) — $source',
+                  ),
+                );
+              }),
+
+            // ── Chips ─────────────────────────────────────────────────────
+            if (chips.isNotEmpty) ...[
+              const SizedBox(height: 22),
+              const Text('🟣 Chips:',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 8),
+              ...chips.map((chip) {
+                final ocr = (chip['extra']?['ocr'] ?? '').toString();
+                final conf = ((chip['confidence'] ?? 0.0) as num).toStringAsFixed(4);
+                final source = _sourceLabelForComponent(chip);
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Text(
+                    '• Chip → ${ocr.isEmpty || ocr == "unreadable" ? "unreadable" : ocr}  (conf: $conf) — $source',
+                  ),
+                );
+              }),
+            ],
+
+            // ── Voltage Regulators ─────────────────────────────────────────
+            if (voltageRegs.isNotEmpty) ...[
+              const SizedBox(height: 22),
+              const Text('⚡ Voltage Regulators:',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 8),
+              ...voltageRegs.map((vr) {
+                final ocr = (vr['extra']?['ocr'] ?? '').toString();
+                final conf = ((vr['confidence'] ?? 0.0) as num).toStringAsFixed(4);
+                final source = _sourceLabelForComponent(vr);
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Text(
+                    '• Voltage Reg → ${ocr.isEmpty || ocr == "unreadable" ? "unreadable" : ocr}  (conf: $conf) — $source',
+                  ),
+                );
+              }),
+            ],
+
+            // ── Others ─────────────────────────────────────────────────────
+            const SizedBox(height: 22),
+            const Text('🧩 Others:',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
             if (others.isEmpty)
-              const Text("• none")
+              const Text('• none')
             else
               ...others.map((o) {
-                final t = o["type"];
-                final conf = (o["confidence"] ?? 0.0).toString();
+                final t = o['type'];
+                final conf = ((o['confidence'] ?? 0.0) as num).toStringAsFixed(4);
                 final source = _sourceLabelForComponent(o);
-                return Text("• $t  (conf: $conf) — $source");
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Text('• $t  (conf: $conf) — $source'),
+                );
               }),
 
             const SizedBox(height: 28),
