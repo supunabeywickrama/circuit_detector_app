@@ -10,6 +10,7 @@ import 'package:image/image.dart' as imglib;
 import 'package:image_cropper/image_cropper.dart';
 import 'package:path_provider/path_provider.dart';
 
+import '../theme/gradients.dart';
 import 'results_page.dart';
 
 class CameraPage extends StatefulWidget {
@@ -130,9 +131,10 @@ class _CameraPageState extends State<CameraPage> with SingleTickerProviderStateM
         uiSettings: [
           AndroidUiSettings(
             toolbarTitle: 'Crop & Adjust',
-            toolbarColor: Colors.deepPurple,
+            toolbarColor: AppColors.darkBg,
             toolbarWidgetColor: Colors.white,
-            activeControlsWidgetColor: Colors.deepPurple,
+            activeControlsWidgetColor: AppColors.primaryCyan,
+            backgroundColor: AppColors.darkBg,
             initAspectRatio: CropAspectRatioPreset.original,
             lockAspectRatio: false,
           ),
@@ -475,35 +477,87 @@ class _CameraPageState extends State<CameraPage> with SingleTickerProviderStateM
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        title: const Text("📷 Capture — Multi-angle", style: TextStyle(fontWeight: FontWeight.bold)),
-        leading: const BackButton(color: Colors.white),
+        title: const Text('Capture', style: TextStyle(fontWeight: FontWeight.w600)),
+        leading: Padding(
+          padding: const EdgeInsets.only(left: 12),
+          child: GestureDetector(
+            onTap: () => Navigator.pop(context),
+            child: Container(
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.10),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.white.withOpacity(0.12)),
+              ),
+              child: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 16),
+            ),
+          ),
+        ),
         actions: [
-          Padding(padding: const EdgeInsets.only(right: 12), child: Center(child: Text("${_capturedImages.length}/$maxImages", style: const TextStyle(fontSize: 16)))),
+          Container(
+            margin: const EdgeInsets.only(right: 14),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              gradient: AppGradients.cyanBlue,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Text(
+              '${_capturedImages.length}/$maxImages',
+              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: Colors.white),
+            ),
+          ),
         ],
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
       floatingActionButton: _capturedImages.isNotEmpty
-          ? FloatingActionButton.extended(onPressed: _navigateToResults, label: const Text("Finish & Analyze"), icon: const Icon(Icons.check))
+          ? Container(
+              decoration: BoxDecoration(
+                gradient: AppGradients.emeraldTeal,
+                borderRadius: BorderRadius.circular(AppRadius.pill),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.accentEmerald.withOpacity(0.4),
+                    blurRadius: 16,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: FloatingActionButton.extended(
+                onPressed: _navigateToResults,
+                backgroundColor: Colors.transparent,
+                elevation: 0,
+                label: const Text('Finish & Analyze', style: TextStyle(fontWeight: FontWeight.w600)),
+                icon: const Icon(Icons.check_rounded),
+              ),
+            )
           : null,
       body: Container(
         decoration: const BoxDecoration(
-          gradient: LinearGradient(colors: [Color(0xFF4B2EF5), Color(0xFF00C9FF)], begin: Alignment.topCenter, end: Alignment.bottomCenter),
+          gradient: AppGradients.darkBackground,
         ),
         child: SafeArea(
           child: _isCameraInitialized
               ? Column(
                   children: [
-                    const SizedBox(height: 8),
-                    const Text("Frame the circuit inside the box, then tap Capture", style: TextStyle(color: Colors.white70, fontSize: 14)),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Frame the circuit, then tap capture',
+                      style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 13),
+                    ),
                     const SizedBox(height: 10),
                     Expanded(
                       child: Container(
                         margin: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
-                        decoration: BoxDecoration(color: Colors.black, borderRadius: BorderRadius.circular(16), boxShadow: [
-                          BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 10, offset: const Offset(0, 6))
-                        ]),
+                        decoration: BoxDecoration(
+                          color: Colors.black,
+                          borderRadius: BorderRadius.circular(AppRadius.xl),
+                          boxShadow: [
+                            BoxShadow(color: AppColors.primaryCyan.withOpacity(0.1), blurRadius: 20, offset: const Offset(0, 6)),
+                          ],
+                        ),
                         child: ClipRRect(
-                          borderRadius: BorderRadius.circular(16),
+                          borderRadius: BorderRadius.circular(AppRadius.xl),
                           child: Stack(
                             fit: StackFit.expand,
                             children: [
@@ -515,21 +569,35 @@ class _CameraPageState extends State<CameraPage> with SingleTickerProviderStateM
                                   heightFactor: 0.62,
                                   child: Container(
                                     decoration: BoxDecoration(
-                                      border: Border.all(color: Colors.greenAccent.withOpacity(0.95), width: 2),
+                                      border: Border.all(color: AppColors.primaryCyan.withOpacity(0.6), width: 1.5),
                                       borderRadius: BorderRadius.circular(8),
-                                      color: Colors.transparent,
                                     ),
                                   ),
                                 ),
                               ),
-                              if (_isBusy) Container(color: Colors.black45, child: const Center(child: CircularProgressIndicator(color: Colors.white))),
-                              Positioned(left: 12, bottom: 12, child: Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6), decoration: BoxDecoration(color: Colors.black45, borderRadius: BorderRadius.circular(8)), child: const Text("Try: even lighting • fill the frame • avoid reflections", style: TextStyle(color: Colors.white70)))),
+                              if (_isBusy) Container(color: Colors.black45, child: const Center(child: CircularProgressIndicator(color: AppColors.primaryCyan))),
+                              Positioned(
+                                left: 12,
+                                bottom: 12,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                  decoration: BoxDecoration(
+                                    color: Colors.black.withOpacity(0.5),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Text(
+                                    'Even lighting • Fill frame • No reflections',
+                                    style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 11),
+                                  ),
+                                ),
+                              ),
                             ],
                           ),
                         ),
                       ),
                     ),
                     const SizedBox(height: 8),
+                    // Thumbnail strip
                     SizedBox(
                       height: 110,
                       child: AnimatedSwitcher(
@@ -539,7 +607,12 @@ class _CameraPageState extends State<CameraPage> with SingleTickerProviderStateM
                                 key: const ValueKey('empty'),
                                 width: double.infinity,
                                 padding: const EdgeInsets.symmetric(horizontal: 20),
-                                child: const Center(child: Text("No shots yet — take a photo to start", style: TextStyle(color: Colors.white70))),
+                                child: Center(
+                                  child: Text(
+                                    'No shots yet — take a photo to start',
+                                    style: TextStyle(color: Colors.white.withOpacity(0.4)),
+                                  ),
+                                ),
                               )
                             : ListView.separated(
                                 key: ValueKey('list_${_capturedImages.length}'),
@@ -556,24 +629,59 @@ class _CameraPageState extends State<CameraPage> with SingleTickerProviderStateM
                                     child: Container(
                                       width: 100,
                                       margin: const EdgeInsets.only(top: 6, bottom: 6),
-                                      decoration: BoxDecoration(borderRadius: BorderRadius.circular(10), color: Colors.black54, boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.25), blurRadius: 6, offset: const Offset(0, 3))]),
+                                      decoration: BoxDecoration(
+                                        borderRadius: BorderRadius.circular(AppRadius.md),
+                                        border: Border.all(
+                                          color: flagged
+                                              ? AppColors.warning.withOpacity(0.5)
+                                              : AppColors.primaryCyan.withOpacity(0.2),
+                                        ),
+                                        boxShadow: [
+                                          BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 6, offset: const Offset(0, 3)),
+                                        ],
+                                      ),
                                       child: Stack(
                                         children: [
-                                          ClipRRect(borderRadius: BorderRadius.circular(10), child: Image.file(file, width: 100, height: 100, fit: BoxFit.cover)),
-                                          Positioned(left: 6, top: 6, child: Container(padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2), decoration: BoxDecoration(color: Colors.black45, borderRadius: BorderRadius.circular(6)), child: Text("#${i + 1}", style: const TextStyle(color: Colors.white, fontSize: 12)))),
+                                          ClipRRect(
+                                            borderRadius: BorderRadius.circular(AppRadius.md),
+                                            child: Image.file(file, width: 100, height: 100, fit: BoxFit.cover),
+                                          ),
+                                          Positioned(
+                                            left: 6,
+                                            top: 6,
+                                            child: Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                              decoration: BoxDecoration(
+                                                color: Colors.black54,
+                                                borderRadius: BorderRadius.circular(6),
+                                              ),
+                                              child: Text('#${i + 1}', style: const TextStyle(color: Colors.white, fontSize: 11)),
+                                            ),
+                                          ),
                                           if (flagged)
                                             Positioned(
                                               right: 6,
                                               top: 6,
                                               child: Tooltip(
-                                                message: quality!.reasons.join(", "),
-                                                child: Container(padding: const EdgeInsets.all(6), decoration: BoxDecoration(color: Colors.orangeAccent, shape: BoxShape.circle), child: const Icon(Icons.warning_amber_rounded, size: 16, color: Colors.black)),
+                                                message: quality!.reasons.join(', '),
+                                                child: Container(
+                                                  padding: const EdgeInsets.all(5),
+                                                  decoration: BoxDecoration(color: AppColors.warning, shape: BoxShape.circle),
+                                                  child: const Icon(Icons.warning_amber_rounded, size: 14, color: Colors.black),
+                                                ),
                                               ),
                                             ),
                                           Positioned(
                                             right: 6,
                                             bottom: 6,
-                                            child: GestureDetector(onTap: () => _removeCapturedAt(i), child: Container(padding: const EdgeInsets.all(6), decoration: BoxDecoration(color: Colors.redAccent, shape: BoxShape.circle), child: const Icon(Icons.delete, size: 16, color: Colors.white))),
+                                            child: GestureDetector(
+                                              onTap: () => _removeCapturedAt(i),
+                                              child: Container(
+                                                padding: const EdgeInsets.all(5),
+                                                decoration: BoxDecoration(color: AppColors.error, shape: BoxShape.circle),
+                                                child: const Icon(Icons.close_rounded, size: 14, color: Colors.white),
+                                              ),
+                                            ),
                                           ),
                                         ],
                                       ),
@@ -584,15 +692,20 @@ class _CameraPageState extends State<CameraPage> with SingleTickerProviderStateM
                       ),
                     ),
                     const SizedBox(height: 10),
+                    // Controls bar
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8),
                       child: Row(
                         children: [
                           Expanded(
-                            child: ElevatedButton.icon(
-                              icon: const Icon(Icons.refresh),
-                              label: const Text("Reset"),
-                              style: ElevatedButton.styleFrom(backgroundColor: Colors.deepPurple, padding: const EdgeInsets.symmetric(vertical: 12)),
+                            child: OutlinedButton.icon(
+                              icon: const Icon(Icons.refresh_rounded, size: 18),
+                              label: const Text('Reset'),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: AppColors.textSecondary,
+                                side: BorderSide(color: AppColors.darkCardBorder.withOpacity(0.4)),
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                              ),
                               onPressed: _capturedImages.isEmpty
                                   ? null
                                   : () {
@@ -602,6 +715,7 @@ class _CameraPageState extends State<CameraPage> with SingleTickerProviderStateM
                             ),
                           ),
                           const SizedBox(width: 12),
+                          // Capture button
                           GestureDetector(
                             onTap: _isBusy ? null : _captureImage,
                             child: SizedBox(
@@ -611,14 +725,31 @@ class _CameraPageState extends State<CameraPage> with SingleTickerProviderStateM
                                 alignment: Alignment.center,
                                 children: [
                                   ScaleTransition(
-                                    scale: Tween(begin: 1.0, end: 1.08).animate(CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut)),
+                                    scale: Tween(begin: 1.0, end: 1.08).animate(
+                                      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
+                                    ),
                                     child: Container(
                                       width: 84,
                                       height: 84,
-                                      decoration: BoxDecoration(shape: BoxShape.circle, gradient: const LinearGradient(colors: [Color(0xFF00E5FF), Color(0xFF0072FF)]), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.25), blurRadius: 10, offset: const Offset(0, 6))]),
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        gradient: AppGradients.cyanBlue,
+                                        boxShadow: [
+                                          BoxShadow(color: AppColors.primaryCyan.withOpacity(0.4), blurRadius: 16, offset: const Offset(0, 4)),
+                                        ],
+                                      ),
                                     ),
                                   ),
-                                  Container(width: 64, height: 64, decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white), child: Icon(_capturedImages.length < maxImages ? Icons.camera_alt : Icons.check, color: Colors.black87)),
+                                  Container(
+                                    width: 64,
+                                    height: 64,
+                                    decoration: const BoxDecoration(shape: BoxShape.circle, color: Colors.white),
+                                    child: Icon(
+                                      _capturedImages.length < maxImages ? Icons.camera_alt_rounded : Icons.check_rounded,
+                                      color: AppColors.darkBg,
+                                      size: 28,
+                                    ),
+                                  ),
                                 ],
                               ),
                             ),
@@ -628,12 +759,15 @@ class _CameraPageState extends State<CameraPage> with SingleTickerProviderStateM
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.end,
                               children: [
-                                Text("${_capturedImages.length} shots", style: const TextStyle(color: Colors.white70)),
+                                Text('${_capturedImages.length} shots', style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 13)),
                                 const SizedBox(height: 6),
                                 ElevatedButton.icon(
-                                  icon: const Icon(Icons.send),
-                                  label: const Text("Analyze Now"),
-                                  style: ElevatedButton.styleFrom(backgroundColor: Colors.teal, padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12)),
+                                  icon: const Icon(Icons.send_rounded, size: 16),
+                                  label: const Text('Analyze'),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: AppColors.primaryCyan,
+                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                                  ),
                                   onPressed: _capturedImages.isEmpty ? null : _navigateToResults,
                                 ),
                               ],
@@ -642,17 +776,42 @@ class _CameraPageState extends State<CameraPage> with SingleTickerProviderStateM
                         ],
                       ),
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 10),
+                    // Tip bar
                     Container(
                       margin: const EdgeInsets.symmetric(horizontal: 20),
                       padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(color: Colors.deepPurple.shade800.withOpacity(0.85), borderRadius: BorderRadius.circular(15)),
-                      child: const Text("⚡ Tip: Take multiple angles for better matching accuracy. Tap a thumbnail for actions (edit / replace / reorder / delete).", textAlign: TextAlign.center, style: TextStyle(color: Colors.white70)),
+                      decoration: BoxDecoration(
+                        color: AppColors.primaryCyan.withOpacity(0.08),
+                        borderRadius: BorderRadius.circular(AppRadius.md),
+                        border: Border.all(color: AppColors.primaryCyan.withOpacity(0.15)),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.lightbulb_rounded, color: AppColors.primaryCyan.withOpacity(0.6), size: 16),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Take multiple angles for better matching accuracy',
+                              style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 12),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                     const SizedBox(height: 18),
                   ],
                 )
-              : const Center(child: CircularProgressIndicator()),
+              : Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const CircularProgressIndicator(color: AppColors.primaryCyan),
+                      const SizedBox(height: 16),
+                      Text('Initializing camera...', style: TextStyle(color: Colors.white.withOpacity(0.5))),
+                    ],
+                  ),
+                ),
         ),
       ),
     );

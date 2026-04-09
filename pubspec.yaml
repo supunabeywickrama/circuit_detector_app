@@ -1,5 +1,5 @@
 name: circuit_detector_app
-description: "A new Flutter project."
+description: "AI-Powered Electronic Circuit Component Detector"
 
 publish_to: 'none'
 
@@ -12,41 +12,39 @@ dependencies:
   flutter:
     sdk: flutter
 
+  # Core
   http: ^1.2.1
-  image_picker: ^1.0.7
+  provider: ^6.1.5
   path: ^1.8.3
   mime: ^1.0.4
-  camera: ^0.10.5+9
-  #path_provider: ^2.1.2
-  photo_view: ^0.14.0
-  
-
-  cupertino_icons: ^1.0.8
-  provider: ^6.1.5
-  image_cropper: ^11.0.0
-  #image: ^4.5.4
-  #tflite_flutter: ^0.9.1
-  #tflite_flutter_helper: ^0.3.0
-  #camera: any
-  image: any
   path_provider: any
+  shared_preferences: ^2.3.0
+
+  # Camera & Image
+  camera: ^0.10.5+9
+  image_picker: ^1.0.7
+  image_cropper: ^11.0.0
+  image: any
+  photo_view: ^0.14.0
+
+  # UI
+  cupertino_icons: ^1.0.8
+  google_fonts: ^6.2.1
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-
-  
   flutter_lints: ^5.0.0
 
-
-
 flutter:
-
-  
   uses-material-design: true
 
   assets:
     - assets/images/home_page_bg.webp
     - assets/images/circuit_placeholder.png
+    - assets/images/login_bg.png
+    - assets/images/home_bg_premium.png
+    - assets/images/settings_bg.png
+    - assets/images/subscription_bg.png
     - assets/models/best_float32.tflite
     - assets/models/labels.txt

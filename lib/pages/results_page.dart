@@ -6,10 +6,10 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
-import 'package:photo_view/photo_view.dart';
 import 'package:photo_view/photo_view_gallery.dart';
 
 import '../services/api_service.dart';
+import '../theme/gradients.dart';
 import 'history_page.dart'; // <--- using HistoryStorage.addEntry
 
 class ResultsPage extends StatefulWidget {
@@ -454,6 +454,15 @@ class _ResultsPageState extends State<ResultsPage> {
     } catch (e) {
       debugPrint("[ResultsPage] _saveCurrentDetectionToHistory error: $e");
     }
+  }
+
+  int _categoryCount() {
+    final types = <String>{};
+    for (final c in _allComponents) {
+      final t = (c['type'] as String? ?? '').toLowerCase();
+      if (t.isNotEmpty) types.add(t);
+    }
+    return types.length;
   }
 
   List<Map<String, dynamic>> _byType(String startsWith) {
@@ -928,12 +937,25 @@ class _ResultsPageState extends State<ResultsPage> {
       body = Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const CircularProgressIndicator(),
-          const SizedBox(height: 20),
+          SizedBox(
+            width: 56,
+            height: 56,
+            child: CircularProgressIndicator(
+              strokeWidth: 3,
+              valueColor: AlwaysStoppedAnimation<Color>(AppColors.primaryCyan),
+            ),
+          ),
+          const SizedBox(height: 24),
           Text(
-            'Analysing your circuit...\nThis may take a few seconds.',
+            'Analysing your circuit...',
             textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.grey.shade600, fontSize: 14),
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'AI is detecting components and reading values',
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.bodySmall,
           ),
         ],
       );
@@ -980,15 +1002,38 @@ class _ResultsPageState extends State<ResultsPage> {
       }).toList();
 
       body = SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 30),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              'Total detections: ${_allComponents.length}',
-              style: const TextStyle(fontSize: 12, color: Colors.grey),
+            // ── Summary chips ──
+            Row(
+              children: [
+                _SummaryChip(
+                  icon: Icons.memory_rounded,
+                  label: '${_allComponents.length}',
+                  subtitle: 'Components',
+                  color: AppColors.primaryCyan,
+                ),
+                const SizedBox(width: 10),
+                _SummaryChip(
+                  icon: Icons.image_rounded,
+                  label: '${widget.imagePaths.length}',
+                  subtitle: 'Images',
+                  color: AppColors.primaryViolet,
+                ),
+                const SizedBox(width: 10),
+                _SummaryChip(
+                  icon: Icons.category_rounded,
+                  label: '${_categoryCount()}',
+                  subtitle: 'Types',
+                  color: AppColors.accentEmerald,
+                ),
+              ],
             ),
             const SizedBox(height: 8),
+
+            const SizedBox(height: 14),
 
             // ── Blur warning banner ────────────────────────────────────────
             if (_anyBlurred)
@@ -996,17 +1041,20 @@ class _ResultsPageState extends State<ResultsPage> {
                 margin: const EdgeInsets.only(bottom: 14),
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                 decoration: BoxDecoration(
-                  color: Colors.amber.shade700,
-                  borderRadius: BorderRadius.circular(10),
+                  gradient: LinearGradient(
+                    colors: [AppColors.warning.withOpacity(0.15), AppColors.warning.withOpacity(0.08)],
+                  ),
+                  borderRadius: BorderRadius.circular(AppRadius.md),
+                  border: Border.all(color: AppColors.warning.withOpacity(0.3)),
                 ),
                 child: Row(
                   children: [
-                    const Icon(Icons.blur_on, color: Colors.white),
+                    Icon(Icons.blur_on_rounded, color: AppColors.warning, size: 20),
                     const SizedBox(width: 10),
-                    const Expanded(
+                    Expanded(
                       child: Text(
-                        '⚠ Some images appear blurry. Results may be less accurate.',
-                        style: TextStyle(color: Colors.white, fontSize: 13),
+                        'Some images appear blurry — results may be less accurate.',
+                        style: TextStyle(color: AppColors.warning, fontSize: 13),
                       ),
                     ),
                   ],
@@ -1014,117 +1062,144 @@ class _ResultsPageState extends State<ResultsPage> {
               ),
 
             // ── Resistors ──────────────────────────────────────────────────
-            const Text('🟡 Resistors:',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
-            if (resistors.isEmpty)
-              const Text('• none')
-            else
-              ...resistors.map((r) {
+            _SectionCard(
+              title: 'Resistors',
+              icon: Icons.electric_bolt_rounded,
+              color: AppColors.accentAmber,
+              count: resistors.length,
+              isEmpty: resistors.isEmpty,
+              children: resistors.map((r) {
                 final val = (r['extra']?['value'] ?? '').toString();
-                final conf = ((r['confidence'] ?? 0.0) as num).toStringAsFixed(4);
-                final source = _sourceLabelForComponent(r);
+                final conf = ((r['confidence'] ?? 0.0) as num).toStringAsFixed(2);
                 final bands = r['extra']?['bands'];
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 4),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('• Resistor → ${val.isEmpty ? "value N/A" : val}  (conf: $conf) — $source'),
-                      if (bands is List && bands.isNotEmpty)
-                        Padding(
-                          padding: const EdgeInsets.only(left: 12, top: 2),
-                          child: Text(
-                            'Bands: ${bands.join(" | ")}',
-                            style: const TextStyle(fontSize: 12, color: Colors.grey),
-                          ),
-                        ),
-                    ],
-                  ),
+                return _ComponentTile(
+                  icon: Icons.electrical_services_rounded,
+                  iconColor: AppColors.accentAmber,
+                  title: val.isEmpty ? 'Value N/A' : val,
+                  subtitle: 'Confidence: $conf',
+                  trailing: bands is List && bands.isNotEmpty
+                      ? Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: bands.take(5).map<Widget>((b) {
+                            return Container(
+                              width: 14,
+                              height: 14,
+                              margin: const EdgeInsets.only(left: 2),
+                              decoration: BoxDecoration(
+                                color: _bandColor(b.toString()),
+                                shape: BoxShape.circle,
+                                border: Border.all(color: Colors.white24, width: 0.5),
+                              ),
+                            );
+                          }).toList(),
+                        )
+                      : null,
                 );
-              }),
+              }).toList(),
+            ),
 
+            const SizedBox(height: 14),
             // ── ICs ────────────────────────────────────────────────────────
-            const SizedBox(height: 22),
-            const Text('🔵 ICs:',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
-            if (ics.isEmpty)
-              const Text('• none')
-            else
-              ...ics.map((ic) {
+            _SectionCard(
+              title: 'Integrated Circuits',
+              icon: Icons.memory_rounded,
+              color: AppColors.primaryBlue,
+              count: ics.length,
+              isEmpty: ics.isEmpty,
+              children: ics.map((ic) {
                 final ocr = (ic['extra']?['ocr'] ?? '').toString();
-                final conf = ((ic['confidence'] ?? 0.0) as num).toStringAsFixed(4);
-                final source = _sourceLabelForComponent(ic);
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 4),
-                  child: Text(
-                    '• IC → ${ocr.isEmpty || ocr == "unreadable" ? "unreadable" : ocr}  (conf: $conf) — $source',
-                  ),
+                final conf = ((ic['confidence'] ?? 0.0) as num).toStringAsFixed(2);
+                return _ComponentTile(
+                  icon: Icons.developer_board_rounded,
+                  iconColor: AppColors.primaryBlue,
+                  title: ocr.isEmpty || ocr == 'unreadable' ? 'Unreadable' : ocr,
+                  subtitle: 'Confidence: $conf',
                 );
-              }),
+              }).toList(),
+            ),
 
             // ── Chips ─────────────────────────────────────────────────────
             if (chips.isNotEmpty) ...[
-              const SizedBox(height: 22),
-              const Text('🟣 Chips:',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 8),
-              ...chips.map((chip) {
-                final ocr = (chip['extra']?['ocr'] ?? '').toString();
-                final conf = ((chip['confidence'] ?? 0.0) as num).toStringAsFixed(4);
-                final source = _sourceLabelForComponent(chip);
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 4),
-                  child: Text(
-                    '• Chip → ${ocr.isEmpty || ocr == "unreadable" ? "unreadable" : ocr}  (conf: $conf) — $source',
-                  ),
-                );
-              }),
+              const SizedBox(height: 14),
+              _SectionCard(
+                title: 'Chips',
+                icon: Icons.sim_card_rounded,
+                color: AppColors.primaryViolet,
+                count: chips.length,
+                isEmpty: false,
+                children: chips.map((chip) {
+                  final ocr = (chip['extra']?['ocr'] ?? '').toString();
+                  final conf = ((chip['confidence'] ?? 0.0) as num).toStringAsFixed(2);
+                  return _ComponentTile(
+                    icon: Icons.sim_card_rounded,
+                    iconColor: AppColors.primaryViolet,
+                    title: ocr.isEmpty || ocr == 'unreadable' ? 'Unreadable' : ocr,
+                    subtitle: 'Confidence: $conf',
+                  );
+                }).toList(),
+              ),
             ],
 
             // ── Voltage Regulators ─────────────────────────────────────────
             if (voltageRegs.isNotEmpty) ...[
-              const SizedBox(height: 22),
-              const Text('⚡ Voltage Regulators:',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 8),
-              ...voltageRegs.map((vr) {
-                final ocr = (vr['extra']?['ocr'] ?? '').toString();
-                final conf = ((vr['confidence'] ?? 0.0) as num).toStringAsFixed(4);
-                final source = _sourceLabelForComponent(vr);
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 4),
-                  child: Text(
-                    '• Voltage Reg → ${ocr.isEmpty || ocr == "unreadable" ? "unreadable" : ocr}  (conf: $conf) — $source',
-                  ),
-                );
-              }),
+              const SizedBox(height: 14),
+              _SectionCard(
+                title: 'Voltage Regulators',
+                icon: Icons.bolt_rounded,
+                color: AppColors.accentOrange,
+                count: voltageRegs.length,
+                isEmpty: false,
+                children: voltageRegs.map((vr) {
+                  final ocr = (vr['extra']?['ocr'] ?? '').toString();
+                  final conf = ((vr['confidence'] ?? 0.0) as num).toStringAsFixed(2);
+                  return _ComponentTile(
+                    icon: Icons.bolt_rounded,
+                    iconColor: AppColors.accentOrange,
+                    title: ocr.isEmpty || ocr == 'unreadable' ? 'Unreadable' : ocr,
+                    subtitle: 'Confidence: $conf',
+                  );
+                }).toList(),
+              ),
             ],
 
             // ── Others ─────────────────────────────────────────────────────
-            const SizedBox(height: 22),
-            const Text('🧩 Others:',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
-            if (others.isEmpty)
-              const Text('• none')
-            else
-              ...others.map((o) {
-                final t = o['type'];
-                final conf = ((o['confidence'] ?? 0.0) as num).toStringAsFixed(4);
-                final source = _sourceLabelForComponent(o);
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 4),
-                  child: Text('• $t  (conf: $conf) — $source'),
-                );
-              }),
+            if (others.isNotEmpty) ...[
+              const SizedBox(height: 14),
+              _SectionCard(
+                title: 'Other Components',
+                icon: Icons.widgets_rounded,
+                color: AppColors.textSecondary,
+                count: others.length,
+                isEmpty: false,
+                children: others.map((o) {
+                  final t = o['type'] ?? 'Unknown';
+                  final conf = ((o['confidence'] ?? 0.0) as num).toStringAsFixed(2);
+                  return _ComponentTile(
+                    icon: Icons.widgets_rounded,
+                    iconColor: AppColors.textSecondary,
+                    title: t.toString(),
+                    subtitle: 'Confidence: $conf',
+                  );
+                }).toList(),
+              ),
+            ],
 
             const SizedBox(height: 28),
             if (imagePaths.isNotEmpty) ...[
-              const Text(
-                "📸 Captured Images:",
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              Row(
+                children: [
+                  Icon(Icons.camera_alt_rounded, size: 16, color: AppColors.primaryCyan),
+                  const SizedBox(width: 8),
+                  Text(
+                    'CAPTURED IMAGES',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.primaryCyan,
+                      letterSpacing: 1.2,
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 10),
               ListView.builder(
@@ -1137,49 +1212,62 @@ class _ResultsPageState extends State<ResultsPage> {
                   final comps = _detectionsPerPath[path] ?? const <Map<String, dynamic>>[];
                   final imgSize = _imageSizesPerPath[path];
 
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text("• Angle ${index + 1}:"),
-                      const SizedBox(height: 5),
-                      Stack(
-                        children: [
-                          GestureDetector(
-                            onTap: () => _showZoomableImage(index),
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(10),
-                              child: AspectRatio(
-                                aspectRatio: (imgSize != null && imgSize.width > 0 && imgSize.height > 0) ? imgSize.width / imgSize.height : 4 / 3,
-                                child: _buildDetectionImage(
-                                  file,
-                                  comps,
-                                  imgSize,
-                                ),
-                              ),
-                            ),
-                          ),
-                          Positioned(
-                            top: 8,
-                            right: 8,
-                            child: Row(
-                              children: [
-                                IconButton(
-                                  icon: const Icon(Icons.refresh, color: Colors.white),
-                                  tooltip: "Retake",
-                                  onPressed: () => _retakeImage(index),
-                                ),
-                                IconButton(
-                                  icon: const Icon(Icons.delete, color: Colors.red),
-                                  tooltip: "Delete",
-                                  onPressed: () => _confirmDelete(index),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 14),
+                    decoration: BoxDecoration(
+                      color: (Theme.of(context).brightness == Brightness.dark
+                              ? Colors.white
+                              : Colors.black)
+                          .withOpacity(0.05),
+                      borderRadius: BorderRadius.circular(AppRadius.lg),
+                      border: Border.all(
+                        color: (Theme.of(context).brightness == Brightness.dark
+                                ? Colors.white
+                                : Colors.grey)
+                            .withOpacity(0.08),
                       ),
-                      const SizedBox(height: 20),
-                    ],
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(14, 10, 14, 6),
+                          child: Row(
+                            children: [
+                              Text('Angle ${index + 1}',
+                                  style: Theme.of(context).textTheme.titleMedium),
+                              const Spacer(),
+                              GestureDetector(
+                                onTap: () => _retakeImage(index),
+                                child: Icon(Icons.refresh_rounded,
+                                    size: 20, color: AppColors.primaryCyan),
+                              ),
+                              const SizedBox(width: 12),
+                              GestureDetector(
+                                onTap: () => _confirmDelete(index),
+                                child: Icon(Icons.delete_rounded,
+                                    size: 20, color: AppColors.error),
+                              ),
+                            ],
+                          ),
+                        ),
+                        GestureDetector(
+                          onTap: () => _showZoomableImage(index),
+                          child: ClipRRect(
+                            borderRadius: const BorderRadius.only(
+                              bottomLeft: Radius.circular(AppRadius.lg),
+                              bottomRight: Radius.circular(AppRadius.lg),
+                            ),
+                            child: AspectRatio(
+                              aspectRatio: (imgSize != null && imgSize.width > 0 && imgSize.height > 0)
+                                  ? imgSize.width / imgSize.height
+                                  : 4 / 3,
+                              child: _buildDetectionImage(file, comps, imgSize),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   );
                 },
               ),
@@ -1189,18 +1277,53 @@ class _ResultsPageState extends State<ResultsPage> {
       );
     }
 
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Scaffold(
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: const Text("Detection Results"),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.share),
-            tooltip: "Export / Share Results",
-            onPressed: _shareResults,
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        title: const Text('Detection Results'),
+        leading: Padding(
+          padding: const EdgeInsets.only(left: 12),
+          child: GestureDetector(
+            onTap: () => Navigator.pop(context),
+            child: Container(
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.10),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.white.withOpacity(0.12)),
+              ),
+              child: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 16),
+            ),
           ),
+        ),
+        actions: [
+          GestureDetector(
+            onTap: _shareResults,
+            child: Container(
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.10),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.white.withOpacity(0.12)),
+              ),
+              child: Icon(Icons.ios_share_rounded, color: Colors.white.withOpacity(0.8), size: 18),
+            ),
+          ),
+          const SizedBox(width: 14),
         ],
       ),
-      body: body,
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: isDark ? AppGradients.darkBackground : AppGradients.surfaceLight,
+        ),
+        child: SafeArea(child: body),
+      ),
     );
   }
 }
@@ -1243,5 +1366,242 @@ class _Group {
       final b = (sigs.map((s) => s[2]).reduce((a, b) => a + b) / sigs.length).round();
       signature = [r, g, b];
     }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  Premium UI Widgets for Results Page
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// Summary stat chip widget
+class _SummaryChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String subtitle;
+  final Color color;
+
+  const _SummaryChip({
+    required this.icon,
+    required this.label,
+    required this.subtitle,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
+        decoration: BoxDecoration(
+          color: color.withOpacity(isDark ? 0.10 : 0.08),
+          borderRadius: BorderRadius.circular(AppRadius.md),
+          border: Border.all(color: color.withOpacity(0.2)),
+        ),
+        child: Column(
+          children: [
+            Icon(icon, color: color, size: 22),
+            const SizedBox(height: 6),
+            Text(
+              label,
+              style: TextStyle(
+                color: color,
+                fontWeight: FontWeight.w700,
+                fontSize: 20,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              subtitle,
+              style: TextStyle(
+                color: isDark ? AppColors.textSecondary : AppColors.textDarkSecondary,
+                fontSize: 11,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Section card wrapping a group of component tiles
+class _SectionCard extends StatelessWidget {
+  final String title;
+  final IconData icon;
+  final Color color;
+  final int count;
+  final bool isEmpty;
+  final List<Widget> children;
+
+  const _SectionCard({
+    required this.title,
+    required this.icon,
+    required this.color,
+    required this.count,
+    required this.isEmpty,
+    required this.children,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      decoration: BoxDecoration(
+        color: isDark ? Colors.white.withOpacity(0.04) : Colors.white.withOpacity(0.80),
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+        border: Border.all(
+          color: isDark ? color.withOpacity(0.15) : color.withOpacity(0.12),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [color.withOpacity(0.12), color.withOpacity(0.04)],
+              ),
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(AppRadius.lg),
+                topRight: Radius.circular(AppRadius.lg),
+              ),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 32,
+                  height: 32,
+                  decoration: BoxDecoration(
+                    color: color.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(icon, color: color, size: 18),
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 15,
+                    color: isDark ? AppColors.textPrimary : AppColors.textDarkPrimary,
+                  ),
+                ),
+                const Spacer(),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: color.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    '$count',
+                    style: TextStyle(color: color, fontWeight: FontWeight.w700, fontSize: 13),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // Body
+          if (isEmpty)
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text(
+                'None detected',
+                style: TextStyle(
+                  color: isDark ? AppColors.textSecondary : AppColors.textDarkSecondary,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            )
+          else
+            ...children,
+        ],
+      ),
+    );
+  }
+}
+
+/// Individual component tile inside a SectionCard
+class _ComponentTile extends StatelessWidget {
+  final IconData icon;
+  final Color iconColor;
+  final String title;
+  final String subtitle;
+  final Widget? trailing;
+
+  const _ComponentTile({
+    required this.icon,
+    required this.iconColor,
+    required this.title,
+    required this.subtitle,
+    this.trailing,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      child: Row(
+        children: [
+          Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              color: iconColor.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(icon, color: iconColor, size: 16),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                    color: isDark ? AppColors.textPrimary : AppColors.textDarkPrimary,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: isDark ? AppColors.textSecondary : AppColors.textDarkSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (trailing != null) trailing!,
+        ],
+      ),
+    );
+  }
+}
+
+/// Map resistor band color names to actual display colors
+Color _bandColor(String name) {
+  switch (name.toLowerCase().trim()) {
+    case 'black': return Colors.black;
+    case 'brown': return const Color(0xFF8B4513);
+    case 'red': return Colors.red;
+    case 'orange': return Colors.orange;
+    case 'yellow': return Colors.yellow;
+    case 'green': return Colors.green;
+    case 'blue': return Colors.blue;
+    case 'violet': case 'purple': return Colors.purple;
+    case 'grey': case 'gray': return Colors.grey;
+    case 'white': return Colors.white;
+    case 'gold': return const Color(0xFFDAA520);
+    case 'silver': return const Color(0xFFC0C0C0);
+    default: return Colors.grey;
   }
 }
