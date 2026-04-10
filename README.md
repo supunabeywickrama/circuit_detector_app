@@ -4,8 +4,11 @@
 
 <div align="center">
 
-<img width="1376" height="3064" alt="Gemini_Generated_Image_s0owihs0owihs0ow" src="https://github.com/user-attachments/assets/02884817-4329-4c71-a32b-4b390221e3e5" />
+<img width="1920" height="1080" alt="Untitled design" src="https://github.com/user-attachments/assets/bc71b513-3472-46a4-92cc-abbe8372f33c" />
 
+---
+
+<img width="1920" height="1080" alt="Untitled design (1)" src="https://github.com/user-attachments/assets/e3b48cf6-4463-4466-adaa-fe8f2efd2443" />
 
 </div>
 
