@@ -1319,6 +1319,8 @@ class _ResultsPageState extends State<ResultsPage> {
         ],
       ),
       body: Container(
+        width: double.infinity,
+        height: double.infinity,
         decoration: BoxDecoration(
           gradient: isDark ? AppGradients.darkBackground : AppGradients.surfaceLight,
         ),
