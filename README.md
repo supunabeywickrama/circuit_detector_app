@@ -4,9 +4,8 @@
 
 <div align="center">
 
-<img width="1080" height="2400" alt="Screenshot_1772902800" src="https://github.com/user-attachments/assets/9d65fcf8-a073-4e34-9af8-d508baf8353c" />
-<img width="1080" height="2400" alt="Screenshot_1772901812" src="https://github.com/user-attachments/assets/c49fb561-bb7d-4839-997b-8c1d0714f39c" />
-<img width="1080" height="2400" alt="Screenshot_1772901816" src="https://github.com/user-attachments/assets/f1bf5f19-ddd7-409b-8f5b-0aaf701eb0d9" />
+<img width="1376" height="3064" alt="Gemini_Generated_Image_s0owihs0owihs0ow" src="https://github.com/user-attachments/assets/02884817-4329-4c71-a32b-4b390221e3e5" />
+
 
 </div>
 
