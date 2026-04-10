@@ -115,6 +115,7 @@ When you take **multiple photos** of the same board:
 
 | Feature | Description |
 |---|---|
+| 💎 **Premium UI/UX** | Frosted glassmorphism design system & dynamic gradients |
 | 📷 **Multi-angle capture** | Take up to 5 photos for better accuracy |
 | ✂️ **Image cropping** | Crop before sending to isolate the board |
 | ⚠️ **Quality checking** | Blur & brightness warnings before upload |
@@ -123,8 +124,8 @@ When you take **multiple photos** of the same board:
 | 🔤 **IC text reading** | Tesseract OCR reads chip part numbers |
 | 📜 **Scan history** | All scans saved locally with thumbnails |
 | 🔎 **History search** | Search by date, resistor value, or IC name |
-| 📤 **Export** | Export any scan as JSON |
-| 🌙 **Dark / Light mode** | Theme toggle in settings |
+| 📤 **Share/Export** | Native sharing of formatted text summary and JSON exports |
+| 🌙 **Dark / Light mode** | Theme toggle in customized settings |
 | 🖼️ **Gallery import** | Pick existing photos from device |
 | 🔍 **Zoomable images** | Pinch-to-zoom detection results |
 
@@ -336,46 +337,39 @@ flutter build apk --release
 ## 📱 App Screens
 
 ### 🏠 Home Screen
-The landing page with three main actions:
+The landing page featuring our premium dark circuitry background and three main frosted glass card actions:
 - **Capture Circuit Image** → Opens live camera
 - **Pick from Gallery** → Select image(s) from device storage
 - **View Scan History** → Browse all previous scans
 
 ### 📷 Camera Page
-- Live camera preview with a **green guide frame** to help align the board
-- **Quality check** before each photo:
-  - 🔴 Too blurry (Laplacian variance < 120)
-  - 🔴 Too dark (mean luminance < 45)
-  - 🔴 Too bright (mean luminance > 240)
+- Live camera preview with a **green guide frame** against a blurred glass control panel
+- **Quality check** before each photo (Blur/Brightness)
 - Automatic **crop UI** after each shot
-- Thumbnail strip at the bottom — tap any thumbnail to:
-  - View full size
-  - Re-crop
-  - Retake
-  - Reorder
-  - Delete
+- Thumbnail strip at the bottom — tap any thumbnail to View, Re-crop, Retake, Delete
 - Up to **5 angles** per session
 
 ### 🔍 Results Page
 - **Annotated image** with green bounding boxes and confidence %
-- **Component summary** grouped by type:
-  - 🟡 Resistors with Ω values
+- **Premium Card-based component summary**:
+  - 🟡 Resistors with Ω values and visual color-band chips
   - 🔵 ICs with part numbers
   - 🧩 Others (capacitors, diodes, etc.)
-- **Multi-angle view** — shows which component appears in which angle
+- **Native Sharer** — instantly generate and send a formatted text report of found components
+- Multi-angle view — shows which component appears in which angle
 - Auto-saves to scan history
 
 ### 📜 History Page
-- Browse all past scans with thumbnails
-- **Search** by timestamp, resistor value, or IC name
-- **Filter** by: All | Resistors only | ICs only
-- **Sort** newest or oldest first
-- **Swipe to delete** any entry
-- **Export to JSON** any individual scan
+- Browse all past scans with dynamically rendering thumbnails (Gallery & Camera captures)
+- Premium Dismissible tiles to **Swipe to delete**
+- **Search & Filter** by: All | Resistors only | ICs only
+- **Native Export** — tap the 3-dot menu to export JSON data to any app on your phone
 
 ### ⚙️ Settings Page
+- Custom glassmorphism layout
 - Toggle Dark / Light mode
-- App version info
+- Configure ML Confidence Threshold slider
+- App version & licenses info
 
 ---
 
@@ -491,6 +485,7 @@ Install Tesseract OCR:
 
 ### ❌ Resistor value shows "unreadable"
 - Ensure your `OPENAI_API_KEY` is set in `backend/.env`
+- **Verify OpenAI Quota/Billing:** If you get a 429 Insufficient Quota error from OpenAI, the model will gracefully fallback to Tesseract for ICs but Resistors will return "unreadable".
 - Check the backend terminal for `[GPT-4o RESISTOR]` log lines
 - Try better lighting / hold the phone steady
 - Ensure the resistor is clearly visible and not obstructed

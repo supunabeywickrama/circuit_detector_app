@@ -7,6 +7,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:photo_view/photo_view_gallery.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../services/api_service.dart';
 import '../theme/gradients.dart';
@@ -582,9 +583,40 @@ class _ResultsPageState extends State<ResultsPage> {
   }
 
   void _shareResults() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("Share/export feature coming soon!")),
-    );
+    if (_allComponents.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("No results to share.")),
+      );
+      return;
+    }
+
+    final StringBuffer sb = StringBuffer();
+    sb.writeln("Circuit Detection Results");
+    sb.writeln("-------------------------");
+    sb.writeln("Total detections: ${_allComponents.length}");
+    sb.writeln("");
+
+    final resistors = _byType('resistor');
+    if (resistors.isNotEmpty) {
+      sb.writeln("Resistors:");
+      for (var r in resistors) {
+        final val = (r['extra']?['value'] ?? '').toString();
+        sb.writeln("- ${val.isEmpty ? 'Value N/A' : val}");
+      }
+      sb.writeln("");
+    }
+
+    final ics = _allComponents.where((c) => (c['type'] ?? '') == 'ic').toList();
+    if (ics.isNotEmpty) {
+      sb.writeln("Integrated Circuits:");
+      for (var ic in ics) {
+        final ocr = (ic['extra']?['ocr'] ?? '').toString();
+        sb.writeln("- ${ocr.isEmpty || ocr == 'unreadable' ? 'Unreadable' : ocr}");
+      }
+      sb.writeln("");
+    }
+
+    Share.share(sb.toString(), subject: 'Circuit Detection Results');
   }
 
   /// Image with properly scaled boxes

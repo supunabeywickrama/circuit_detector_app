@@ -6,6 +6,8 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:image_picker/image_picker.dart';
 import '../theme/gradients.dart';
 
 /// HistoryPage with persistent storage (history.json), premium card design.
@@ -121,7 +123,7 @@ class _HistoryPageState extends State<HistoryPage> {
   Future<void> _exportEntry(Map<String, dynamic> entry) async {
     final exportedPath = await HistoryStorage.exportEntryToFile(entry);
     if (exportedPath != null) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Exported to: $exportedPath')));
+      Share.shareXFiles([XFile(exportedPath)], subject: 'Circuit Scan Export');
     } else {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Export failed.')));
     }
@@ -319,7 +321,18 @@ class _HistoryPageState extends State<HistoryPage> {
                       ClipRRect(
                         borderRadius: BorderRadius.circular(AppRadius.md),
                         child: thumbnail != null && File(thumbnail).existsSync()
-                            ? Image.file(File(thumbnail), width: 60, height: 60, fit: BoxFit.cover)
+                            ? Image.file(
+                                File(thumbnail), 
+                                width: 60, 
+                                height: 60, 
+                                fit: BoxFit.cover,
+                                errorBuilder: (context, error, stackTrace) => Container(
+                                  width: 60,
+                                  height: 60,
+                                  color: Colors.red.withOpacity(0.2),
+                                  child: const Icon(Icons.broken_image, color: Colors.red),
+                                ),
+                              )
                             : Container(
                                 width: 60,
                                 height: 60,
@@ -416,7 +429,16 @@ class _HistoryPageState extends State<HistoryPage> {
               if (entry['thumbnailPath'] != null)
                 ClipRRect(
                   borderRadius: BorderRadius.circular(AppRadius.md),
-                  child: Image.file(File(entry['thumbnailPath']), height: 150, fit: BoxFit.cover),
+                  child: Image.file(
+                    File(entry['thumbnailPath']), 
+                    height: 150, 
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) => Container(
+                      height: 150,
+                      color: Colors.red.withOpacity(0.2),
+                      child: const Center(child: Icon(Icons.broken_image, color: Colors.red, size: 40)),
+                    ),
+                  ),
                 ),
               const SizedBox(height: 12),
               Text('🟡 Resistors: ${(entry['resistors'] as List<dynamic>?)?.join(', ') ?? 'none'}'),
