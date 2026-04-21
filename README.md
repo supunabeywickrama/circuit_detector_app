@@ -22,6 +22,7 @@
 - [Features](#-features)
 - [Technology Stack](#-technology-stack)
 - [Project Structure](#-project-structure)
+- [System Architecture](#-system-architecture)
 - [Quick Setup](#-quick-setup)
   - [Backend Setup (Python)](#1-backend-setup-python)
   - [Flutter App Setup](#2-flutter-app-setup)
@@ -30,7 +31,6 @@
 - [App Screens](#-app-screens)
 - [API Reference](#-api-reference)
 - [Troubleshooting](#-troubleshooting)
-- [Credits & Architecture](#-system-architecture)
 
 ---
 
@@ -200,6 +200,64 @@ circuit_detector_app/
 │   └── labels.txt                   # 22 component class names
 │
 └── pubspec.yaml                     # Flutter dependencies
+```
+
+---
+
+## 🏗️ System Architecture
+
+```mermaid
+flowchart TD
+    %% Define Styles
+    classDef flutter fill:#0C1E3A,stroke:#1EE4D4,stroke-width:2px,color:#fff
+    classDef python fill:#1A2E35,stroke:#4EC9B0,stroke-width:2px,color:#fff
+    classDef ai fill:#2B124C,stroke:#B266FF,stroke-width:2px,color:#fff
+    classDef ocr fill:#3D2A1D,stroke:#FF9933,stroke-width:2px,color:#fff
+    
+    %% Flutter App Nodes
+    subgraph Frontend["📱 Flutter App (Frontend)"]
+        UI["Home Screen"] --> |Capture / Gallery| Camera["Camera & Crop UI"]
+        Camera --> |Pre-flight check| Blur["Blur & Brightness Validation"]
+        Blur -- "Pass" --> MultiImg["Prepare 1-5 Image(s)"]
+    end
+    
+    %% Backend Nodes
+    subgraph Backend["🐍 FastAPI Backend"]
+        MultiImg --> |HTTP POST /detect_multi| API["FastAPI Endpoints"]
+        
+        API --> |Pass to Model| YOLO["YOLOv8 Detection"]
+        
+        YOLO --> |Extract Bounding Box| Router{"Component Type?"}
+        
+        %% Routing Logic
+        Router --> |"Resistor"| GPT4["GPT-4o Vision API"]
+        Router --> |"IC, Chip, VR"| Tesseract["Tesseract OCR"]
+        Router --> |"Other"| Base["Pass-through"]
+        
+        %% Model specifics
+        GPT4 --> |Identify Color Bands| Ohms["Calculate Ω Value"]
+        Ohms -.-> |Quota Exceeded| Tesseract
+        Tesseract --> |Read Part #| OCRResult["Extract Text Marking"]
+        
+        Ohms --> Builder["Construct Component Details"]
+        OCRResult --> Builder
+        Base --> Builder
+        
+        Builder --> Response["Return JSON Response"]
+    end
+    
+    %% Result Handling Nodes
+    subgraph AppLogic["⚙️ App Logic"]
+        Response --> |Receive JSON| Clustering["ORB Clustering & Multi-angle deduplication"]
+        Clustering --> ResultsUI["Display Bounding Boxes & Component Chips"]
+        ResultsUI --> History["Save to Scan History & Export"]
+    end
+
+    %% Apply Styles
+    class UI,Camera,MultiImg,Blur,ResultsUI,History,Clustering flutter;
+    class API,Router,Builder,Response,Base python;
+    class YOLO,GPT4,Ohms ai;
+    class Tesseract,OCRResult ocr;
 ```
 
 ---
@@ -498,64 +556,6 @@ Install Tesseract OCR:
 Add camera permissions in `android/app/src/main/AndroidManifest.xml`:
 ```xml
 <uses-permission android:name="android.permission.CAMERA"/>
-```
-
----
-
-## 🏗️ System Architecture
-
-```mermaid
-flowchart TD
-    %% Define Styles
-    classDef flutter fill:#0C1E3A,stroke:#1EE4D4,stroke-width:2px,color:#fff
-    classDef python fill:#1A2E35,stroke:#4EC9B0,stroke-width:2px,color:#fff
-    classDef ai fill:#2B124C,stroke:#B266FF,stroke-width:2px,color:#fff
-    classDef ocr fill:#3D2A1D,stroke:#FF9933,stroke-width:2px,color:#fff
-    
-    %% Flutter App Nodes
-    subgraph Frontend["📱 Flutter App (Frontend)"]
-        UI["Home Screen"] --> |Capture / Gallery| Camera["Camera & Crop UI"]
-        Camera --> |Pre-flight check| Blur["Blur & Brightness Validation"]
-        Blur -- "Pass" --> MultiImg["Prepare 1-5 Image(s)"]
-    end
-    
-    %% Backend Nodes
-    subgraph Backend["🐍 FastAPI Backend"]
-        MultiImg --> |HTTP POST /detect_multi| API["FastAPI Endpoints"]
-        
-        API --> |Pass to Model| YOLO["YOLOv8 Detection"]
-        
-        YOLO --> |Extract Bounding Box| Router{"Component Type?"}
-        
-        %% Routing Logic
-        Router --> |"Resistor"| GPT4["GPT-4o Vision API"]
-        Router --> |"IC, Chip, VR"| Tesseract["Tesseract OCR"]
-        Router --> |"Other"| Base["Pass-through"]
-        
-        %% Model specifics
-        GPT4 --> |Identify Color Bands| Ohms["Calculate Ω Value"]
-        Ohms -.-> |Quota Exceeded| Tesseract
-        Tesseract --> |Read Part #| OCRResult["Extract Text Marking"]
-        
-        Ohms --> Builder["Construct Component Details"]
-        OCRResult --> Builder
-        Base --> Builder
-        
-        Builder --> Response["Return JSON Response"]
-    end
-    
-    %% Result Handling Nodes
-    subgraph AppLogic["⚙️ App Logic"]
-        Response --> |Receive JSON| Clustering["ORB Clustering & Multi-angle deduplication"]
-        Clustering --> ResultsUI["Display Bounding Boxes & Component Chips"]
-        ResultsUI --> History["Save to Scan History & Export"]
-    end
-
-    %% Apply Styles
-    class UI,Camera,MultiImg,Blur,ResultsUI,History,Clustering flutter;
-    class API,Router,Builder,Response,Base python;
-    class YOLO,GPT4,Ohms ai;
-    class Tesseract,OCRResult ocr;
 ```
 
 ---
